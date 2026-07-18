@@ -47,6 +47,7 @@ node scripts/batch/render-batch.mjs --input config/batch/sample.json --dry
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 输出文件名 / 任务标识（省略则自动编号） |
+| `template` | 模板风格 id：`classic` / `healing` / `quote` / `drama`（省略默认 `classic`，见「模板库」） |
 | `mainTitle` `mainAuthor` `mainIsbn` | 主书信息 |
 | `mainCover` `mainBackground` | 主封面 / 主背景本地覆盖路径（相对 `public/`） |
 | `mainZh` `mainEn` | 主书中英主字幕 |
@@ -76,6 +77,21 @@ out/batch/<时间戳>/
 - **error**：阻断渲染（如主书标题为空），该条标记 `qc-failed`。
 - **warning**：记录但继续（如字幕估算溢出、卡点非递增）。
 - **info**：提示（如封面缺失——会自动降级为生成式占位封面，不影响出片）。
+
+## 模板库
+
+同一套模板代码按 `template` 字段选取一组视觉令牌（`src/templates.ts`），渲染出可辨识的
+不同风格。当前内置四套（覆盖 phase-3-plan 的模板类别）：
+
+| id | 风格 | 特征 |
+| --- | --- | --- |
+| `classic` | 名著推荐 / 默认 | 书脊背景、冷金强调、衬线 |
+| `healing` | 成长治愈 | 暖橘柔光、大圆角、暖白文字 |
+| `quote` | 文学金句 | 纸质浅底 + 横线、金句式封面卡、深色衬线 |
+| `drama` | 短剧感开场 | 高对比黑红斜切、直角卡、亮黄金句、强暗角 |
+
+模板只影响视觉（字体、配色、圆角、背景、卡片样式、暗角、文字色），不改变卡点节奏与
+数据结构。新增模板：在 `src/templates.ts` 的 `TEMPLATES` 注册一组令牌即可。
 
 ## 与前序阶段的关系
 

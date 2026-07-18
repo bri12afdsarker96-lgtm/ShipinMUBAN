@@ -1,7 +1,7 @@
 [
   {
     "id": "classics-night",
-    "template": "book-intro",
+    "template": "classic",
     "mainTitle": "月亮与六便士",
     "mainAuthor": "毛姆",
     "mainZh": "满地都是六便士，他却抬头看见了月亮",
@@ -13,7 +13,7 @@
   },
   {
     "id": "healing-growth",
-    "template": "book-intro",
+    "template": "healing",
     "mainTitle": "被讨厌的勇气",
     "mainAuthor": "岸见一郎",
     "mainZh": "所谓自由，就是被别人讨厌",
@@ -25,7 +25,7 @@
   },
   {
     "id": "quotes-literature",
-    "template": "book-intro",
+    "template": "quote",
     "mainTitle": "小王子",
     "mainAuthor": "圣埃克苏佩里",
     "mainZh": "真正重要的东西，用眼睛是看不见的",

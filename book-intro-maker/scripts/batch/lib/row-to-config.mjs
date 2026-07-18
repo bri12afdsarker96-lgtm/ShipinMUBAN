@@ -139,7 +139,7 @@ export const rowToConfig = (row, index) => {
   const id = String(row.id || row.slug || `video-${String(index + 1).padStart(2, '0')}`);
   return {
     id,
-    template: row.template || 'book-intro',
+    template: row.template || 'classic',
     config: {
       books: buildBooks(row),
       subtitles: buildSubtitles(row),

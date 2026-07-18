@@ -85,6 +85,10 @@ node scripts/batch/render-batch.mjs --input config/batch/sample.json --dry
 输出归档到 `out/batch/<时间戳>/`，含每条 `videos/<id>.mp4`、`manifest.json`、`qc-report.json`。
 字段约定与详细用法见 `../docs/phase-3-batch.md`。示例数据在 `config/batch/`。
 
+**模板库**（`src/templates.ts`）：每条数据可用 `template` 字段选风格，内置
+`classic`（名著推荐）/ `healing`（成长治愈）/ `quote`（文学金句）/ `drama`（短剧感开场）
+四套。模板只改视觉（字体/配色/圆角/背景/卡片/暗角），新增模板在 `TEMPLATES` 注册一组令牌即可。
+
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 
 ## 设计说明

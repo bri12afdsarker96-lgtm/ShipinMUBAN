@@ -49,12 +49,14 @@ const timestampId = () => new Date().toISOString().replace(/[:.]/g, '-').replace
 
 const renderOne = async ({serveUrl, job, outputPath, browserExecutable, retries}) => {
   let lastError = null;
+  // 模板 id 随 inputProps 一起传入渲染，选择视觉风格。
+  const inputProps = {...job.config, template: job.template};
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     try {
       const composition = await selectComposition({
         serveUrl,
         id: COMPOSITION_ID,
-        inputProps: job.config,
+        inputProps,
         browserExecutable,
       });
       await renderMedia({
@@ -62,7 +64,7 @@ const renderOne = async ({serveUrl, job, outputPath, browserExecutable, retries}
         composition,
         codec: 'h264',
         outputLocation: outputPath,
-        inputProps: job.config,
+        inputProps,
         browserExecutable,
       });
       return {ok: true, attempts: attempt};

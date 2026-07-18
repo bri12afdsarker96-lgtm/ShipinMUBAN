@@ -1,3 +1,3 @@
-id,mainTitle,mainAuthor,mainZh,mainEn,flashBooks,subtitles,introMode
-poetry-picks,人间词话,王国维,"衣带渐宽终不悔，为伊消得人憔悴",Devotion without regret,"纳兰词~纳兰性德 | 飞鸟集~泰戈尔 | 沙与沫~纪伯伦","8~48~三本值得反复读的诗集~Three books of verse~lower",generated
-detective-night,东方快车谋杀案,阿加莎·克里斯蒂,"真相只有一个",There is only one truth,"福尔摩斯探案集~柯南道尔 | 无人生还~阿加莎 | 白夜行~东野圭吾 | 嫌疑人X的献身~东野圭吾","8~46~四本让你熬夜的推理~Four page-turners~lower",generated
+id,template,mainTitle,mainAuthor,mainZh,mainEn,flashBooks,subtitles,introMode
+poetry-picks,quote,人间词话,王国维,"衣带渐宽终不悔，为伊消得人憔悴",Devotion without regret,"纳兰词~纳兰性德 | 飞鸟集~泰戈尔 | 沙与沫~纪伯伦","8~48~三本值得反复读的诗集~Three books of verse~lower",generated
+detective-night,drama,东方快车谋杀案,阿加莎·克里斯蒂,"真相只有一个",There is only one truth,"福尔摩斯探案集~柯南道尔 | 无人生还~阿加莎 | 白夜行~东野圭吾 | 嫌疑人X的献身~东野圭吾","8~46~四本让你熬夜的推理~Four page-turners~lower",generated
