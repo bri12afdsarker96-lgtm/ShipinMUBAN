@@ -153,6 +153,7 @@ export const rowToConfig = (row, index) => {
   return {
     id,
     template: row.template || 'classic',
+    audio: nullableStr(row.audio) || undefined,
     beats: buildBeats(row),
     config: {
       books: buildBooks(row),

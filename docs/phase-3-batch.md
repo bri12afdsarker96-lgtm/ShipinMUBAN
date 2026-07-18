@@ -48,6 +48,7 @@ node scripts/batch/render-batch.mjs --input config/batch/sample.json --dry
 | --- | --- |
 | `id` | 输出文件名 / 任务标识（省略则自动编号） |
 | `template` | 模板风格 id：`classic` / `healing` / `quote` / `drama`（省略默认 `classic`，见「模板库」） |
+| `audio` | 背景音乐路径，或 `asset:<id>` 引用素材库（省略用示例节拍，见「素材库」） |
 | `mainTitle` `mainAuthor` `mainIsbn` | 主书信息 |
 | `mainCover` `mainBackground` | 主封面 / 主背景本地覆盖路径（相对 `public/`） |
 | `mainZh` `mainEn` | 主书中英主字幕 |
@@ -111,6 +112,23 @@ node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 -
 对样片节拍音频，检测结果与 `docs/analysis.md` 中人工逐帧标注的切点几乎逐点吻合（误差 ≤1 帧），
 优于原先"约 0.10 秒内"的目标。
 
+## 素材库
+
+`config/assets.example.json` 统一登记素材，配置里用 `asset:<id>` 引用，批量映射后由
+`scripts/lib/assets.mjs` 替换成真实路径 / 样式对象。渲染层无需感知素材库。
+
+| 分类 | 引用字段 | 示例 |
+| --- | --- | --- |
+| `audio` | 顶层 `audio` | `"audio": "asset:default-beat"` |
+| `covers` | `flashBooks[].coverPath` / `mainBook.coverPath` | `"coverPath": "asset:xxx"` |
+| `backgrounds` | `mainBook.backgroundPath` | `"mainBackground": "asset:xxx"` |
+| `introVideos` | `intro.videoPath` | `"introVideo": "asset:xxx"` |
+| `subtitleStyles` | `subtitles.tracks[].style` | `"style": "quote-serif"`（字符串引用 → 样式对象） |
+
+背景音乐现在可按视频配置（`audio` 字段 / 素材引用），缺省回退示例节拍；找不到的引用会
+告警并置空，交由渲染层降级（封面/背景/开场视频缺失都不中断渲染）。用 `--assets <file>`
+指定素材清单，默认 `config/assets.example.json`。
+
 ## 与前序阶段的关系
 
 - 复用二阶段的配置结构与模板：批量入口 composition `BookIntroFromConfig` 接收原始
@@ -121,7 +139,6 @@ node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 -
 ## 后续（阶段三待办）
 
 - 可视化编辑界面（React + 本地服务，Electron/Tauri 封装）。
-- 素材库管理（封面 / 背景 / 开场视频 / 音乐 / 字幕样式统一登记与引用）。
 - 渲染队列的暂停 / 恢复 / 失败归因面板。
 
-已完成：批量生产引擎、模板风格库、音乐瞬态自动卡点检测。
+已完成：批量生产引擎、模板风格库、音乐瞬态自动卡点检测、素材库管理。

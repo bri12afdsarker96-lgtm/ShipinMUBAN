@@ -29,6 +29,7 @@ import {runPool} from './lib/pool.mjs';
 import {runQc, runPostQc} from './lib/qc.mjs';
 import {decodeWav} from '../lib/audio/wav.mjs';
 import {detectCutFrames} from '../lib/audio/onset.mjs';
+import {loadAssets, resolveAssetsInJob} from '../lib/assets.mjs';
 
 const COMPOSITION_ID = 'BookIntroFromConfig';
 
@@ -43,6 +44,7 @@ const parseArgs = (argv) => {
     else if (a === '--retries') args.retries = Number(argv[++i]) || 0;
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a === '--browser') args.browser = argv[++i];
+    else if (a === '--assets') args.assets = argv[++i];
   }
   return args;
 };
@@ -51,8 +53,8 @@ const timestampId = () => new Date().toISOString().replace(/[:.]/g, '-').replace
 
 const renderOne = async ({serveUrl, job, outputPath, browserExecutable, retries}) => {
   let lastError = null;
-  // 模板 id 随 inputProps 一起传入渲染，选择视觉风格。
-  const inputProps = {...job.config, template: job.template};
+  // 模板 id、背景音乐随 inputProps 一起传入渲染。
+  const inputProps = {...job.config, template: job.template, audio: job.audio};
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     try {
       const composition = await selectComposition({
@@ -104,6 +106,14 @@ const main = async () => {
   if (args.limit) jobs = jobs.slice(0, args.limit);
   console.log(`导入 ${jobs.length} 条视频任务`);
 
+  // 1a. 素材库：解析 asset: 引用（音乐 / 封面 / 背景 / 开场视频 / 字幕样式）。
+  const assetsPath = path.resolve(root, args.assets || 'config/assets.example.json');
+  const assets = loadAssets(assetsPath);
+  if (assets) {
+    console.log(`素材库：${path.relative(root, assetsPath)}`);
+    for (const job of jobs) resolveAssetsInJob(job, assets);
+  }
+
   // 1b. 自动卡点：对指定了 beatsAudio 的任务，检测音频瞬态覆盖 flashCutFrames。
   for (const job of jobs) {
     if (!job.beats) continue;
@@ -127,10 +137,6 @@ const main = async () => {
       console.warn(`[卡点] ${job.id}：音频检测失败（${error.message}），保留原切点`);
     }
   }
-
-  // 全局质检：音频存在。
-  const audioOk = existsSync(path.join(root, 'public', 'sample-beat.wav'));
-  if (!audioOk) console.warn('[qc] 警告：public/sample-beat.wav 缺失，视频将没有节拍音频');
 
   const jobId = timestampId();
   const jobDir = path.join(root, args.out, jobId);

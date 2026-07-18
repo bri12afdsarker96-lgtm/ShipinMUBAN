@@ -58,12 +58,17 @@ export type BookIntroProps = {
   title: string;
   /** 模板风格 id（见 templates.ts），缺省用默认模板。 */
   template?: string;
+  /** 背景音乐路径（相对 public / 或 url），缺省用示例节拍。 */
+  audio?: string;
   intro: IntroConfig;
   flashCutFrames: number[];
   bookCards: BookCoverCardData[];
   mainBook: MainBookData;
   subtitleTracks: SubtitleItem[];
 };
+
+/** 默认背景音乐（阶段一示例节拍）。 */
+export const DEFAULT_AUDIO = 'sample-beat.wav';
 
 // —— 封面路径约定 ————————————————————————————————————————————————————
 // 注意：下面的 slug 逻辑必须与 `scripts/fetch-covers.mjs` 保持一致，
@@ -133,6 +138,7 @@ export const loadConfigProps = (): BookIntroProps =>
 /** 原始（未解析）三件套配置。批量生产每条视频以此作为 inputProps。 */
 export type RawConfigInput = {
   template?: unknown;
+  audio?: unknown;
   books?: unknown;
   subtitles?: unknown;
   intro?: unknown;
@@ -141,6 +147,7 @@ export type RawConfigInput = {
 /** 示例三件套原始配置，作为 `BookIntroFromConfig` 的默认 props。 */
 export const rawExampleConfig: RawConfigInput = {
   template: 'classic',
+  audio: DEFAULT_AUDIO,
   books: booksJson,
   subtitles: subtitlesJson,
   intro: introJson,
@@ -157,6 +164,7 @@ export const propsFromRaw = (raw: RawConfigInput): BookIntroProps => ({
     parseIntroConfig(raw?.intro ?? introJson),
   ),
   template: typeof raw?.template === 'string' ? raw.template : undefined,
+  audio: typeof raw?.audio === 'string' ? raw.audio : undefined,
 });
 
 /** 根据 props 推算合适时长：主书页至少留 45 帧尾巴，字幕留 15 帧，最少 240 帧。 */
@@ -184,6 +192,7 @@ const hookLinesToTracks = (lines: HookLine[]): SubtitleItem[] =>
 export const sampleProps: BookIntroProps = {
   title: samplePreset.title,
   template: 'classic',
+  audio: DEFAULT_AUDIO,
   intro: {...DEFAULT_INTRO},
   flashCutFrames: samplePreset.flashCutFrames,
   bookCards: samplePreset.bookCards.map((card) => ({

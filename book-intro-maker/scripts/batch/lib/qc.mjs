@@ -63,6 +63,12 @@ export const runQc = (job, root) => {
     warnings.push(`主书中文字幕可能溢出（${main.zhLine.length} 字）`);
   }
 
+  // 背景音乐存在性。
+  const audioRel = String(job.audio || 'sample-beat.wav').replace(/^public\//, '').replace(/^\/+/, '');
+  if (!/^(https?:|data:)/i.test(audioRel) && !existsSync(path.join(root, 'public', audioRel))) {
+    warnings.push(`背景音乐缺失（${audioRel}），视频将没有节拍音频`);
+  }
+
   // 封面存在性（缺失会降级，仅提示）。
   const missing = [];
   for (const book of books.flashBooks || []) {

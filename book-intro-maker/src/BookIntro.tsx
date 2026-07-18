@@ -9,13 +9,15 @@
 
 import React from 'react';
 import {Audio} from '@remotion/media';
-import {AbsoluteFill, Easing, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
 import {IntroLayer} from './components/IntroLayer';
 import {SubtitleTrack} from './components/SubtitleTrack';
 import {CoverImage} from './components/CoverImage';
 import {getTemplate} from './templates';
 import type {MainBackgroundStyle, TemplateTokens} from './templates';
+import {DEFAULT_AUDIO} from './config';
 import type {BookCoverCardData, BookIntroProps, MainBookData} from './config';
+import {resolveSrc} from './media';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -320,7 +322,7 @@ export const BookIntroVideo: React.FC<BookIntroProps> = (props) => {
 
   return (
     <AbsoluteFill style={{background: 'black', fontFamily: tokens.fontFamily}}>
-      <Audio src={staticFile('sample-beat.wav')} />
+      <Audio src={resolveSrc(props.audio || DEFAULT_AUDIO)} />
 
       {frame < flashStart ? <IntroLayer intro={props.intro} /> : null}
       {hasCuts && frame >= flashStart - 4 && frame < mainStart ? (

@@ -99,6 +99,10 @@ node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 -
 批量数据里给某条加 `beatsAudio`（可配 `beatsStart`/`beatsEnd`/`beatsMax`）即自动检测覆盖
 `flashCutFrames`。对样片节拍音频，检测结果与人工逐帧标注的切点几乎逐点吻合（误差 ≤1 帧）。
 
+**素材库**（`config/assets.example.json` + `scripts/lib/assets.mjs`）：统一登记
+音乐 / 封面 / 背景 / 开场视频 / 字幕样式，配置用 `asset:<id>` 引用。背景音乐现在可按视频
+配置（`audio` 字段），不再硬编码。详见 `../docs/phase-3-batch.md`。
+
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 
 ## 设计说明

@@ -29,12 +29,13 @@
   {
     "id": "quotes-literature",
     "template": "quote",
+    "audio": "asset:default-beat",
     "mainTitle": "小王子",
     "mainAuthor": "圣埃克苏佩里",
     "mainZh": "真正重要的东西，用眼睛是看不见的",
     "mainEn": "What is essential is invisible to the eye",
     "flashBooks": "百年孤独~马尔克斯 | 局外人~加缪 | 麦田里的守望者~塞林格 | 老人与海~海明威 | 挪威的森林~村上春树 | 情人~杜拉斯",
-    "subtitles": "8~50~六句直抵人心的文学金句~Six timeless quotes~lower",
+    "subtitles": {"tracks": [{"id": "q1", "startFrame": 8, "endFrame": 50, "zh": "六句直抵人心的文学金句", "en": "Six timeless quotes", "position": "lower", "style": "quote-serif"}]},
     "introMode": "generated",
     "showSubtitles": "true"
   }
