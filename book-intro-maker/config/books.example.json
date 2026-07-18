@@ -1,0 +1,32 @@
+{
+  "flashCutFrames": [134, 142, 146, 151, 155, 160, 164, 169, 173, 178, 182, 187, 191, 195],
+  "flashBooks": [
+    {
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "isbn": "9780743273565",
+      "coverPath": null
+    },
+    {
+      "title": "Walden",
+      "author": "Henry David Thoreau",
+      "isbn": "9780691096124",
+      "coverPath": null
+    },
+    {
+      "title": "Jane Eyre",
+      "author": "Charlotte Bronte",
+      "isbn": "9780141441146",
+      "coverPath": null
+    }
+  ],
+  "mainBook": {
+    "title": "屏蔽力",
+    "author": "自我边界练习",
+    "isbn": null,
+    "coverPath": null,
+    "backgroundPath": null,
+    "zhLine": "我不需要知道，别人在背后怎么议论我",
+    "enLine": "I do not need to know what people say behind my back"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "tracks": [
+    {
+      "id": "hook-1",
+      "startFrame": 8,
+      "endFrame": 45,
+      "zh": "这得是多干净的灵魂",
+      "en": "What a clear soul",
+      "position": "lower",
+      "style": {
+        "zhColor": "#ffe15a",
+        "enColor": "#ffffff",
+        "zhFontSize": 34,
+        "enFontSize": 16
+      }
+    },
+    {
+      "id": "hook-2",
+      "startFrame": 46,
+      "endFrame": 82,
+      "zh": "才有的觉悟",
+      "en": "Only clear",
+      "position": "lower",
+      "style": {
+        "zhColor": "#ffe15a",
+        "enColor": "#ffffff",
+        "zhFontSize": 34,
+        "enFontSize": 16
+      }
+    }
+  ]
+}

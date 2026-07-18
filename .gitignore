@@ -1,0 +1,16 @@
+.npm-cache/
+_analysis/
+
+**/node_modules/
+**/out/
+**/.cache/
+**/.DS_Store
+**/Thumbs.db
+
+*.log
+.env
+.env.*
+
+book-intro-maker/public/covers/*
+!book-intro-maker/public/covers/.gitkeep
+book-intro-maker/config/*.resolved.json

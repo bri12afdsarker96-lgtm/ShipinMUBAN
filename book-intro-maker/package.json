@@ -1,0 +1,23 @@
+{
+  "name": "book-intro-maker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
+    "render": "remotion render src/index.ts BookIntro out/book-intro-v1.mp4 --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
+    "still": "remotion still src/index.ts BookIntro out/frame-195.png --frame=195 --scale=0.5 --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
+    "covers": "node scripts/fetch-covers.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.490",
+    "@remotion/media": "4.0.490",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.490"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}
