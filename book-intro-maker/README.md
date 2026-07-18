@@ -103,6 +103,17 @@ node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 -
 音乐 / 封面 / 背景 / 开场视频 / 字幕样式，配置用 `asset:<id>` 引用。背景音乐现在可按视频
 配置（`audio` 字段），不再硬编码。详见 `../docs/phase-3-batch.md`。
 
+## 可视化编辑器
+
+```bash
+npm.cmd run gui          # 起本地编辑器 http://127.0.0.1:5173
+npm.cmd run gui:build    # 打包到 gui/dist
+```
+
+纯前端 React + `@remotion/player`：左侧表单编辑模板/主书/书单/字幕/音乐，中间**实时预览**，
+右侧**导出配置 JSON** 直接喂给批量引擎。复用渲染层的 `propsFromRaw`/模板注册表，所见即所得。
+支持 `?template=&title=` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
+
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 
 ## 设计说明

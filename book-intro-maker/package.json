@@ -6,7 +6,11 @@
     "studio": "remotion studio src/index.ts --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
     "render": "remotion render src/index.ts BookIntro out/book-intro-v1.mp4 --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
     "still": "remotion still src/index.ts BookIntro out/frame-195.png --frame=195 --scale=0.5 --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
-    "covers": "node scripts/fetch-covers.mjs"
+    "covers": "node scripts/fetch-covers.mjs",
+    "beats": "node scripts/detect-beats.mjs",
+    "batch": "node scripts/batch/render-batch.mjs",
+    "gui": "node scripts/build-gui.mjs --serve",
+    "gui:build": "node scripts/build-gui.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.490",
