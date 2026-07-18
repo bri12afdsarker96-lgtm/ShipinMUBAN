@@ -68,6 +68,25 @@ npx remotion render src/index.ts BookIntroConfig out/book-intro-config.mp4
 > `package.json` 里的默认命令使用 Windows 上的 Chrome 路径（`--browser-executable`）。
 > 其他平台请把该参数指向本机的 Chrome / Chromium / chrome-headless-shell 可执行文件。
 
+## 阶段三：批量生产（命令行）
+
+一行数据 = 一条视频，支持 CSV / JSON 批量导入、自动卡点、渲染队列（并发 + 重试）、
+自动质检、输出归档。
+
+```bash
+# 批量渲染（JSON 或 CSV）
+node scripts/batch/render-batch.mjs --input config/batch/sample.json
+node scripts/batch/render-batch.mjs --input config/batch/sample.csv --concurrency 2
+
+# 只质检不渲染
+node scripts/batch/render-batch.mjs --input config/batch/sample.json --dry
+```
+
+输出归档到 `out/batch/<时间戳>/`，含每条 `videos/<id>.mp4`、`manifest.json`、`qc-report.json`。
+字段约定与详细用法见 `../docs/phase-3-batch.md`。示例数据在 `config/batch/`。
+
+> 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
+
 ## 设计说明
 
 - 所有动画用 `useCurrentFrame()` + `interpolate()` + 显式帧号，不用 CSS animation。

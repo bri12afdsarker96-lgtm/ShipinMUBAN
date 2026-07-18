@@ -1,0 +1,38 @@
+[
+  {
+    "id": "classics-night",
+    "template": "book-intro",
+    "mainTitle": "月亮与六便士",
+    "mainAuthor": "毛姆",
+    "mainZh": "满地都是六便士，他却抬头看见了月亮",
+    "mainEn": "Everyone has sixpence, he looked up at the moon",
+    "flashBooks": "The Great Gatsby~F. Scott Fitzgerald~9780743273565 | Jane Eyre~Charlotte Bronte~9780141441146 | Walden~Henry David Thoreau~9780691096124 | Pride and Prejudice~Jane Austen | Moby Dick~Herman Melville",
+    "subtitles": "8~46~今天推荐五本世界名著~Five classics tonight~lower ; 47~92~总有一本点亮你~One will light you up~lower",
+    "introMode": "generated",
+    "showSubtitles": "true"
+  },
+  {
+    "id": "healing-growth",
+    "template": "book-intro",
+    "mainTitle": "被讨厌的勇气",
+    "mainAuthor": "岸见一郎",
+    "mainZh": "所谓自由，就是被别人讨厌",
+    "mainEn": "Freedom is being disliked by others",
+    "flashBooks": "蛤蟆先生去看心理医生~罗伯特·戴博德 | 活出生命的意义~弗兰克尔 | 你当像鸟飞往你的山~塔拉 | 也许你该找个人聊聊~洛莉",
+    "subtitles": "8~48~四本治愈系必读~Four healing reads~lower ; 49~94~陪你走过低谷~With you through the lows~lower",
+    "introMode": "generated",
+    "showSubtitles": "true"
+  },
+  {
+    "id": "quotes-literature",
+    "template": "book-intro",
+    "mainTitle": "小王子",
+    "mainAuthor": "圣埃克苏佩里",
+    "mainZh": "真正重要的东西，用眼睛是看不见的",
+    "mainEn": "What is essential is invisible to the eye",
+    "flashBooks": "百年孤独~马尔克斯 | 局外人~加缪 | 麦田里的守望者~塞林格 | 老人与海~海明威 | 挪威的森林~村上春树 | 情人~杜拉斯",
+    "subtitles": "8~50~六句直抵人心的文学金句~Six timeless quotes~lower",
+    "introMode": "generated",
+    "showSubtitles": "true"
+  }
+]

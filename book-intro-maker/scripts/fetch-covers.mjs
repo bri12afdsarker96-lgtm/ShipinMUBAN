@@ -17,6 +17,7 @@ import {access, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import {coverSlug as slug} from './lib/cover-path.mjs';
 
 const root = process.cwd();
 const configPath = path.join(root, 'config', 'books.example.json');
@@ -26,14 +27,6 @@ const outputPath = path.join(root, 'config', 'books.resolved.json');
 const FORCE = process.argv.includes('--force');
 const TIMEOUT_MS = 12000;
 const MIN_IMAGE_BYTES = 1024; // 小于该阈值大概率是空白/占位图，视为无效。
-
-// 注意：slug 必须与 src/config.ts 的 coverSlug 保持一致。
-const slug = (value) =>
-  String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9一-龥]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
 
 const fileExists = async (filePath) => {
   try {

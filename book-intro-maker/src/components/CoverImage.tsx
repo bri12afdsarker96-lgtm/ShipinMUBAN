@@ -23,7 +23,9 @@ export const CoverImage: React.FC<{
     <Img
       src={resolveSrc(src)}
       // 提供 onError 后，Remotion 不会因为图片 404 而让整个渲染失败，
-      // 而是切换到生成式占位封面。
+      // 而是切换到生成式占位封面。maxRetries=0 让缺封面立即降级，
+      // 避免逐帧重试拖慢批量渲染。
+      maxRetries={0}
       onError={() => setFailed(true)}
       style={{width: '100%', height: '100%', objectFit: 'cover', ...style}}
     />

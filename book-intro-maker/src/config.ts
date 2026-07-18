@@ -128,6 +128,38 @@ export const loadConfigProps = (): BookIntroProps =>
     parseIntroConfig(introJson),
   );
 
+/** 原始（未解析）三件套配置。批量生产每条视频以此作为 inputProps。 */
+export type RawConfigInput = {
+  books?: unknown;
+  subtitles?: unknown;
+  intro?: unknown;
+};
+
+/** 示例三件套原始配置，作为 `BookIntroFromConfig` 的默认 props。 */
+export const rawExampleConfig: RawConfigInput = {
+  books: booksJson,
+  subtitles: subtitlesJson,
+  intro: introJson,
+};
+
+/**
+ * 从原始三件套构建模板 props。缺省的部分回退到示例配置，保证任意子集都能渲染。
+ * 映射/解析逻辑集中在这里，批量脚本只需提供原始配置即可，无需重复实现。
+ */
+export const propsFromRaw = (raw: RawConfigInput): BookIntroProps =>
+  buildPropsFromConfig(
+    parseBooksConfig(raw?.books ?? booksJson),
+    parseSubtitlesConfig(raw?.subtitles ?? subtitlesJson),
+    parseIntroConfig(raw?.intro ?? introJson),
+  );
+
+/** 根据 props 推算合适时长：主书页至少留 45 帧尾巴，字幕留 15 帧，最少 240 帧。 */
+export const durationForProps = (props: BookIntroProps): number => {
+  const lastCut = props.flashCutFrames[props.flashCutFrames.length - 1] ?? 0;
+  const lastSubtitle = props.subtitleTracks.reduce((max, t) => Math.max(max, t.endFrame), 0);
+  return Math.max(240, lastCut + 45, lastSubtitle + 15);
+};
+
 // —— 阶段一样片适配 ——————————————————————————————————————————————————
 
 /** 把阶段一的开场钩子字幕转换成独立字幕轨道，保持样片视觉一致。 */
