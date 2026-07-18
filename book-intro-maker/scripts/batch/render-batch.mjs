@@ -17,7 +17,7 @@
 //   --browser <path>     浏览器可执行文件（默认取环境变量 BROWSER_EXECUTABLE）
 //   --dry                只导入 + 质检，不渲染
 
-import {existsSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {mkdir, writeFile, stat} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -27,6 +27,8 @@ import {parseInputFile} from './lib/parse-input.mjs';
 import {rowToConfig} from './lib/row-to-config.mjs';
 import {runPool} from './lib/pool.mjs';
 import {runQc, runPostQc} from './lib/qc.mjs';
+import {decodeWav} from '../lib/audio/wav.mjs';
+import {detectCutFrames} from '../lib/audio/onset.mjs';
 
 const COMPOSITION_ID = 'BookIntroFromConfig';
 
@@ -101,6 +103,30 @@ const main = async () => {
   let jobs = rows.map((row, i) => rowToConfig(row, i));
   if (args.limit) jobs = jobs.slice(0, args.limit);
   console.log(`导入 ${jobs.length} 条视频任务`);
+
+  // 1b. 自动卡点：对指定了 beatsAudio 的任务，检测音频瞬态覆盖 flashCutFrames。
+  for (const job of jobs) {
+    if (!job.beats) continue;
+    try {
+      const audioPath = path.resolve(root, job.beats.audio);
+      const {sampleRate, samples} = decodeWav(readFileSync(audioPath));
+      const frames = detectCutFrames(samples, sampleRate, {
+        fps: 30,
+        startSec: job.beats.startSec,
+        endSec: job.beats.endSec,
+        max: job.beats.max,
+        sensitivity: job.beats.sensitivity,
+      });
+      if (frames.length >= 2) {
+        job.config.books.flashCutFrames = frames;
+        console.log(`[卡点] ${job.id}：自动检测 ${frames.length} 个切点`);
+      } else {
+        console.warn(`[卡点] ${job.id}：检测结果过少（${frames.length}），保留原切点`);
+      }
+    } catch (error) {
+      console.warn(`[卡点] ${job.id}：音频检测失败（${error.message}），保留原切点`);
+    }
+  }
 
   // 全局质检：音频存在。
   const audioOk = existsSync(path.join(root, 'public', 'sample-beat.wav'));

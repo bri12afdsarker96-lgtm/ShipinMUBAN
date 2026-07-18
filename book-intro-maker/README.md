@@ -89,6 +89,16 @@ node scripts/batch/render-batch.mjs --input config/batch/sample.json --dry
 `classic`（名著推荐）/ `healing`（成长治愈）/ `quote`（文学金句）/ `drama`（短剧感开场）
 四套。模板只改视觉（字体/配色/圆角/背景/卡片/暗角），新增模板在 `TEMPLATES` 注册一组令牌即可。
 
+**自动卡点**（`scripts/detect-beats.mjs`）：解码音频、检测瞬态，生成贴合音乐的快闪切点。
+
+```bash
+# 生成书封快闪段(4-7s)的 14 个切点
+node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 --max 14
+```
+
+批量数据里给某条加 `beatsAudio`（可配 `beatsStart`/`beatsEnd`/`beatsMax`）即自动检测覆盖
+`flashCutFrames`。对样片节拍音频，检测结果与人工逐帧标注的切点几乎逐点吻合（误差 ≤1 帧）。
+
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 
 ## 设计说明

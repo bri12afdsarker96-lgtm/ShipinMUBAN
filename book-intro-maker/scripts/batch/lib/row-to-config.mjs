@@ -134,12 +134,26 @@ const buildSubtitles = (row) => {
   return {tracks: parseSubtitleTracks(row.subtitles)};
 };
 
-/** 行 → {id, config:{books, subtitles, intro}}。 */
+// 自动卡点配置：行内指定 beatsAudio 时，批量引擎会解码该音频、检测瞬态，
+// 覆盖 flashCutFrames（检测失败或过少则保留默认节奏）。
+const buildBeats = (row) => {
+  if (!row.beatsAudio) return null;
+  return {
+    audio: String(row.beatsAudio),
+    startSec: row.beatsStart != null && row.beatsStart !== '' ? Number(row.beatsStart) : undefined,
+    endSec: row.beatsEnd != null && row.beatsEnd !== '' ? Number(row.beatsEnd) : undefined,
+    max: row.beatsMax != null && row.beatsMax !== '' ? Number(row.beatsMax) : undefined,
+    sensitivity: row.beatsSensitivity != null && row.beatsSensitivity !== '' ? Number(row.beatsSensitivity) : undefined,
+  };
+};
+
+/** 行 → {id, template, beats, config:{books, subtitles, intro}}。 */
 export const rowToConfig = (row, index) => {
   const id = String(row.id || row.slug || `video-${String(index + 1).padStart(2, '0')}`);
   return {
     id,
     template: row.template || 'classic',
+    beats: buildBeats(row),
     config: {
       books: buildBooks(row),
       subtitles: buildSubtitles(row),

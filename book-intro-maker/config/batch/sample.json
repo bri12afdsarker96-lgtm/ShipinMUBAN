@@ -2,6 +2,9 @@
   {
     "id": "classics-night",
     "template": "classic",
+    "beatsAudio": "public/sample-beat.wav",
+    "beatsStart": 4,
+    "beatsEnd": 7,
     "mainTitle": "月亮与六便士",
     "mainAuthor": "毛姆",
     "mainZh": "满地都是六便士，他却抬头看见了月亮",
