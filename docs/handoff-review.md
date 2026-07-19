@@ -207,8 +207,12 @@ a3476f4 阶段三：编辑器本地服务版
 - **批量 `id` 路径遍历 + 同名覆盖**（P1，硬伤）：`row-to-config` 增 `sanitizeId`（去 `. / \`），
   `run-batch` 文件名再过滤并以 `index` 去重。实测 `..\escape` → `escape-0.mp4` 落在 job 目录内、
   两条 `dup` → `dup-1/dup-2` 不覆盖。
-- **413 不稳定**（P2）：`readBody` 由 `req.destroy()` 改为 `req.pause()` + 受控 reject，
-  实测 5MB body 稳定返回 413 JSON、服务存活。
+- **413 不稳定**（P2）：`readBody` 由 `req.destroy()` 改为 `req.pause()` + 受控 reject；
+  错误响应加 `Connection: close`，避免请求体未读完的「脏」keep-alive 连接被复用（第二轮反查观察到的
+  复用失败）。实测 5MB body 稳定返回 413 JSON、服务存活、后续请求正常。
+
+新增最小回归测试 `scripts/test-regressions.mjs`（`npm test`）：覆盖上述三类硬伤——id 清理单元、
+413（无需浏览器）、books 降级与批量 id 越界/去重（需 `BROWSER_EXECUTABLE` 渲染）。实测 **11/11 通过**。
 
 **教训**：跨多文件批量修改时，声称的改动必须逐一回读/实测确认落地，不能凭计划清单汇报。
 

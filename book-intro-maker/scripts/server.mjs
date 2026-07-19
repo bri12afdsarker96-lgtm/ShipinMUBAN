@@ -300,6 +300,9 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     console.error(error);
     const code = error?.statusCode || 500;
+    // 异常路径下请求体可能未读完（如 413 pause），显式关闭连接，
+    // 避免客户端复用这条「脏」的 keep-alive 连接导致下次请求失败。
+    res.setHeader('Connection', 'close');
     // 客户端错误（400/413）回显受控文案；服务器错误不泄露内部 message。
     return sendJson(res, code, {ok: false, error: code >= 500 ? '服务器内部错误' : error.message});
   }

@@ -117,6 +117,14 @@ npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1
 
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 
+## 回归测试
+
+```bash
+npm.cmd test        # 覆盖三类回归：批量 id 越界/覆盖、books 非对象降级、大请求体 413
+```
+
+id 清理与 413 无需浏览器；books 降级与批量渲染断言需设 `BROWSER_EXECUTABLE`（或本机 Chrome）。
+
 ## 设计说明
 
 - 所有动画用 `useCurrentFrame()` + `interpolate()` + 显式帧号，不用 CSS animation。

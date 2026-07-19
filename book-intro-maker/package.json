@@ -11,7 +11,8 @@
     "batch": "node scripts/batch/render-batch.mjs",
     "gui": "node scripts/build-gui.mjs --serve",
     "gui:build": "node scripts/build-gui.mjs",
-    "server": "node scripts/server.mjs"
+    "server": "node scripts/server.mjs",
+    "test": "node scripts/test-regressions.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.490",
