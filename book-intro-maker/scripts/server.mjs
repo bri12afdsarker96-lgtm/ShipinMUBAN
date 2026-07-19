@@ -12,7 +12,7 @@
 
 import {createServer} from 'node:http';
 import {readFile, readdir, stat, mkdir, writeFile, rename, unlink} from 'node:fs/promises';
-import {existsSync, createReadStream} from 'node:fs';
+import {existsSync, createReadStream, readFileSync} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {getBundle, renderJob} from './batch/lib/render-core.mjs';
@@ -33,6 +33,13 @@ const distDir = path.join(root, 'gui', 'dist');
 const publicDir = path.join(root, 'public');
 const outDir = path.join(root, 'out');
 const editorOutDir = path.join(outDir, 'editor');
+
+// —— 可写设置：编辑器单片渲染输出子目录，严格锁定在 out/ 根内 ——
+const configDir = path.join(root, 'config');
+const settingsFile = path.join(configDir, 'editor-settings.json');
+const DEFAULT_OUTPUT_SUBDIR = 'editor';
+const MAX_SUBDIR_DEPTH = 4;
+const SUBDIR_SEGMENT = /^[A-Za-z0-9一-龥_-]{1,40}$/;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -123,6 +130,63 @@ const withinBase = (base, target) => {
   return resolved === base || resolved.startsWith(base + path.sep) ? resolved : null;
 };
 
+// 把用户输入解析成受控子目录段：返回 {segments, rel, full}；非法输入抛 400。
+// 空输入回落默认子目录。硬拒 .. / 反斜杠 / 绝对路径 / 盘符 / 波浪号 / 控制字符，
+// 每段再逐一走安全字符白名单，最后用 withinBase(outDir) 兜底纵深防御。
+const outputSubdirResult = (segments) => {
+  const full = withinBase(outDir, path.join(outDir, ...segments));
+  if (!full) throw Object.assign(new Error('输出子目录越界'), {statusCode: 400});
+  return {segments, rel: segments.join('/'), full};
+};
+
+const parseOutputSubdir = (input) => {
+  const raw = String(input ?? '').trim();
+  if (raw === '') return outputSubdirResult([DEFAULT_OUTPUT_SUBDIR]);
+  if (
+    /[\\]/.test(raw) ||
+    raw.includes('..') ||
+    raw.startsWith('/') ||
+    /^[A-Za-z]:/.test(raw) ||
+    raw.startsWith('~') ||
+    /[\u0000-\u001f\u007f]/.test(raw)
+  ) {
+    throw Object.assign(new Error('输出子目录不能包含 .. 、绝对路径或盘符'), {statusCode: 400});
+  }
+  const segments = raw.split('/').filter((s) => s !== '');
+  if (segments.length === 0 || segments.length > MAX_SUBDIR_DEPTH) {
+    throw Object.assign(new Error(`输出子目录最多 ${MAX_SUBDIR_DEPTH} 层`), {statusCode: 400});
+  }
+  for (const seg of segments) {
+    if (seg === '.' || seg === '..' || !SUBDIR_SEGMENT.test(seg)) {
+      throw Object.assign(new Error('每层目录只能是字母/数字/中文/下划线/连字符（≤40 字符）'), {statusCode: 400});
+    }
+  }
+  return outputSubdirResult(segments);
+};
+
+const readSettingsFile = () => {
+  try {
+    if (!existsSync(settingsFile)) return {};
+    const parsed = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {}; // 损坏的设置文件降级为默认，绝不因此崩服务
+  }
+};
+
+// 读取「当前有效」输出子目录：即便 settings 文件被手改注入 .. / 绝对路径，
+// 也在此重新过一遍边界校验，非法则回落默认——持久化值绝不被无条件信任。
+const currentOutputSubdir = () => {
+  try {
+    return parseOutputSubdir(readSettingsFile().outputSubdir);
+  } catch {
+    return outputSubdirResult([DEFAULT_OUTPUT_SUBDIR]);
+  }
+};
+
+const editorOutDirNow = () => currentOutputSubdir().full;
+const editorOutUrlBase = () => `/out/${currentOutputSubdir().rel}`;
+
 const resolveStatic = (urlPath) => {
   const clean = decodeURIComponent(urlPath.split('?')[0]).replace(/^\/+/, '');
   if (clean === '') return path.join(distDir, 'index.html');
@@ -161,8 +225,9 @@ const handleRender = async (req, res) => {
   const raw = await readJson(req);
   const id = safeSlug(raw.id || raw.mainTitle || 'editor');
   const fileName = `${id}-${Date.now()}-${uniqueSuffix()}.mp4`;
-  await mkdir(editorOutDir, {recursive: true});
-  const outputPath = path.join(editorOutDir, fileName);
+  const dir = editorOutDirNow();
+  await mkdir(dir, {recursive: true});
+  const outputPath = path.join(dir, fileName);
 
   const inputProps = {
     template: raw.template,
@@ -184,16 +249,18 @@ const handleRender = async (req, res) => {
   }
   const {size} = await stat(outputPath);
   console.log(`[render] ${id} 完成 (${(size / 1e6).toFixed(2)}MB, ${(ms / 1000).toFixed(1)}s)`);
-  return sendJson(res, 200, {ok: true, url: `/out/editor/${fileName}`, bytes: size, ms});
+  return sendJson(res, 200, {ok: true, url: `${editorOutUrlBase()}/${fileName}`, bytes: size, ms});
 };
 
 const handleRenders = async (res) => {
-  if (!existsSync(editorOutDir)) return sendJson(res, 200, {renders: []});
-  const files = (await readdir(editorOutDir)).filter((f) => f.endsWith('.mp4'));
+  const dir = editorOutDirNow();
+  const urlBase = editorOutUrlBase();
+  if (!existsSync(dir)) return sendJson(res, 200, {renders: []});
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.mp4'));
   const renders = [];
   for (const f of files) {
-    const info = await stat(path.join(editorOutDir, f));
-    renders.push({url: `/out/editor/${f}`, bytes: info.size, mtime: info.mtimeMs});
+    const info = await stat(path.join(dir, f));
+    renders.push({url: `${urlBase}/${f}`, bytes: info.size, mtime: info.mtimeMs});
   }
   renders.sort((a, b) => b.mtime - a.mtime);
   return sendJson(res, 200, {renders});
@@ -609,10 +676,11 @@ const handleAssetDelete = async (req, res) => {
   return sendJson(res, 200, {ok: true, kind, deletedPath: target.assetPath});
 };
 
-const handleSettings = (res) =>
-  sendJson(res, 200, {
+const settingsPayload = () => {
+  const sub = currentOutputSubdir();
+  return {
     ok: true,
-    version: '0.3.0',
+    version: '0.4.0',
     directories: {
       materials: {
         covers: path.join(publicDir, 'covers'),
@@ -620,15 +688,41 @@ const handleSettings = (res) =>
         introVideos: path.join(publicDir, 'intro-videos'),
         audio: path.join(publicDir, 'audio'),
       },
-      output: editorOutDir,
+      output: sub.full,
       outputRoot: outDir,
+    },
+    writable: {
+      outputSubdir: {
+        value: sub.rel,
+        default: DEFAULT_OUTPUT_SUBDIR,
+        resolved: sub.full,
+        root: outDir,
+        maxDepth: MAX_SUBDIR_DEPTH,
+        hint: '编辑器单片渲染的输出目录，相对 out/ 可用 / 分层（最多 4 层）；只能字母/数字/中文/下划线/连字符。',
+      },
     },
     capabilities: {
       systemOpen: false,
       showInFolder: false,
       webFallback: true,
     },
-  });
+  };
+};
+
+const handleSettings = (res) => sendJson(res, 200, settingsPayload());
+
+const handleSettingsUpdate = async (req, res) => {
+  const body = await readJson(req);
+  if (!('outputSubdir' in body)) {
+    return sendJson(res, 400, {ok: false, error: '缺少 outputSubdir'});
+  }
+  const sub = parseOutputSubdir(body.outputSubdir); // 非法输入抛 400，由顶层 catch 回受控文案
+  const next = {...readSettingsFile(), outputSubdir: sub.rel};
+  await mkdir(configDir, {recursive: true});
+  await writeFile(settingsFile, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  console.log(`[settings] 输出子目录 -> ${sub.rel}`);
+  return sendJson(res, 200, settingsPayload());
+};
 
 const handleAssetUpload = async (req, res) => {
   const body = await readUploadJson(req);
@@ -758,7 +852,10 @@ const server = createServer(async (req, res) => {
     const url = req.url || '/';
     // 注意：async handler 必须 await，否则内部抛错会变成 unhandled rejection 崩溃进程。
     if (url === '/api/health') return sendJson(res, 200, {ok: true});
-    if (url === '/api/settings') return handleSettings(res);
+    if (url === '/api/settings') {
+      if (req.method === 'POST') return await handleSettingsUpdate(req, res);
+      return handleSettings(res);
+    }
     if (url === '/api/assets') return await handleAssets(res);
     if (url === '/api/assets/upload' && req.method === 'POST') return await handleAssetUpload(req, res);
     if (url === '/api/assets/rename' && req.method === 'POST') return await handleAssetRename(req, res);

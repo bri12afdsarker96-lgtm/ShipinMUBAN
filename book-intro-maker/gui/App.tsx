@@ -93,9 +93,18 @@ type AssetKind = 'covers' | 'backgrounds' | 'introVideos' | 'audio';
 type AssetItem = {kind: AssetKind; name: string; path: string; url: string; bytes?: number; mtime?: number; mime?: string; mutable?: boolean};
 type AssetLibrary = Record<AssetKind, AssetItem[]>;
 type RenderItem = {url: string; bytes?: number; mtime?: number};
+type WritableSetting = {
+  value?: string;
+  default?: string;
+  resolved?: string;
+  root?: string;
+  maxDepth?: number;
+  hint?: string;
+};
 type AppSettings = {
   version?: string;
   directories?: {materials?: Partial<Record<AssetKind, string>>; output?: string; outputRoot?: string};
+  writable?: {outputSubdir?: WritableSetting};
   capabilities?: {systemOpen?: boolean; showInFolder?: boolean; webFallback?: boolean};
 };
 type AssetChooserState = {kind: AssetKind; title: string; current?: string; onSelect: (value: string) => void};
@@ -316,6 +325,8 @@ export const App: React.FC = () => {
   const [renamingAsset, setRenamingAsset] = useState<{path: string; name: string} | null>(null);
   const [deleteConfirmPath, setDeleteConfirmPath] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [outputSubdirDraft, setOutputSubdirDraft] = useState('');
+  const [settingsSave, setSettingsSave] = useState<{status: 'idle' | 'saving' | 'done' | 'error'; message?: string}>({status: 'idle'});
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
@@ -345,9 +356,34 @@ export const App: React.FC = () => {
     try {
       const res = await fetch('/api/settings');
       const data = await res.json();
-      if (data.ok) setSettings(data);
+      if (data.ok) {
+        setSettings(data);
+        setOutputSubdirDraft(data.writable?.outputSubdir?.value ?? '');
+      }
     } catch {
       /* 设置读取失败不影响编辑器 */
+    }
+  };
+
+  const saveOutputSubdir = async () => {
+    if (!apiOk) return;
+    setSettingsSave({status: 'saving'});
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({outputSubdir: outputSubdirDraft}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setSettings(data);
+        setOutputSubdirDraft(data.writable?.outputSubdir?.value ?? '');
+        setSettingsSave({status: 'done', message: '已保存'});
+      } else {
+        setSettingsSave({status: 'error', message: data.error || `保存失败（${res.status}）`});
+      }
+    } catch (error) {
+      setSettingsSave({status: 'error', message: String(error)});
     }
   };
 
@@ -830,7 +866,7 @@ export const App: React.FC = () => {
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div>
             <h2 style={{fontSize: 22, margin: '0 0 6px'}}>目录设置</h2>
-            <div style={{fontSize: 13, color: '#6d7890'}}>当前版本固定托管素材目录与输出目录，避免暴露任意本地文件。</div>
+            <div style={{fontSize: 13, color: '#6d7890'}}>素材目录固定托管；输出子目录可在 out/ 根内自定义，越界写法会被拒绝。</div>
           </div>
           <button type="button" onClick={loadSettings} disabled={!apiOk} style={{...softButtonStyle, background: '#fff'}}>刷新目录</button>
         </div>
@@ -850,6 +886,33 @@ export const App: React.FC = () => {
           ))}
         </div>
         <div style={{fontSize: 12, color: '#8a93a0', marginTop: 12}}>系统打开目录属于桌面客户端能力；Web 模式下先提供复制路径和浏览器链接。</div>
+
+        <div style={{marginTop: 18, paddingTop: 16, borderTop: '1px solid #eef1f5'}}>
+          <div style={{fontWeight: 700, fontSize: 14, marginBottom: 4}}>编辑器输出子目录</div>
+          <div style={{fontSize: 12, color: '#6d7890', marginBottom: 10}}>
+            {settings?.writable?.outputSubdir?.hint || '单片渲染的输出目录，相对 out/ 可用 / 分层；只能字母/数字/中文/下划线/连字符。'}
+          </div>
+          <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+            <span style={{fontSize: 13, color: '#6d7890', fontFamily: 'monospace'}}>out/</span>
+            <input
+              style={{...inputStyle, maxWidth: 320}}
+              value={outputSubdirDraft}
+              onChange={(e) => { setOutputSubdirDraft(e.target.value); setSettingsSave({status: 'idle'}); }}
+              placeholder={settings?.writable?.outputSubdir?.default || 'editor'}
+              disabled={!apiOk}
+            />
+            <button type="button" onClick={saveOutputSubdir} disabled={!apiOk || settingsSave.status === 'saving'} style={{padding: '8px 16px', border: 'none', borderRadius: 6, background: '#2f6bff', color: '#fff', fontSize: 13, cursor: 'pointer'}}>
+              {settingsSave.status === 'saving' ? '保存中…' : '保存'}
+            </button>
+            {settingsSave.status === 'done' && <span style={{fontSize: 12, color: '#1a9d5a'}}>✓ {settingsSave.message}</span>}
+            {settingsSave.status === 'error' && <span style={{fontSize: 12, color: '#d64545'}}>✗ {settingsSave.message}</span>}
+          </div>
+          {settings?.writable?.outputSubdir?.resolved && (
+            <div style={{fontSize: 12, color: '#8a93a0', marginTop: 8}}>
+              解析路径：<span title={settings.writable.outputSubdir.resolved} style={{fontFamily: 'monospace'}}>{settings.writable.outputSubdir.resolved}</span>
+            </div>
+          )}
+        </div>
       </section>
 
       <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 18, maxWidth: 900}}>

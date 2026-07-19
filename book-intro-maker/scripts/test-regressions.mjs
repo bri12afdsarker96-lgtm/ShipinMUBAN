@@ -152,6 +152,26 @@ try {
       if (item?.path) await rm(path.join(process.cwd(), 'public', item.path), {force: true});
     }
 
+    // —— 集成：设置页可写输出子目录 + 边界校验（无需渲染）——
+    console.log('集成：设置输出子目录边界校验');
+    const outRoot = path.join(process.cwd(), 'out');
+    for (const bad of ['../escape', '/etc/passwd', 'a\\b', 'C:\\win', '../../out2', 'foo/../bar', 'a/b/c/d/e', 'bad name']) {
+      const r = await postJson(`${B}/api/settings`, {outputSubdir: bad});
+      ok(r.res.status === 400, `越界/非法子目录被拒绝：${JSON.stringify(bad)} -> ${r.res.status}`);
+    }
+    const legal = await postJson(`${B}/api/settings`, {outputSubdir: 'renders/主题-1'});
+    const resolved = legal.data?.writable?.outputSubdir?.resolved || '';
+    ok(legal.res.status === 200 && legal.data.ok === true, '合法子目录 renders/主题-1 -> 200');
+    ok(resolved === path.join(outRoot, 'renders', '主题-1'), '解析路径落在 out/ 根内且正确');
+    ok(resolved.startsWith(outRoot + path.sep), '解析路径未越出 out/ 根');
+    const readBack = await (await fetch(`${B}/api/settings`)).json();
+    ok(readBack.writable?.outputSubdir?.value === 'renders/主题-1', 'GET 读回已持久化的子目录');
+    const missing = await postJson(`${B}/api/settings`, {});
+    ok(missing.res.status === 400, '缺少 outputSubdir 字段 -> 400');
+    // 恢复默认，避免污染后续渲染测试与本地环境
+    await postJson(`${B}/api/settings`, {outputSubdir: 'editor'});
+    await rm(path.join(process.cwd(), 'config', 'editor-settings.json'), {force: true});
+
     // —— 集成：批量队列失败原因 + 单条重试入口（无需渲染）——
     console.log('集成：批量队列控制');
     const badBatch = await (
