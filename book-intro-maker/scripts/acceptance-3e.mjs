@@ -98,6 +98,16 @@ const coverStats = (resolved) => {
   return {total: books.length, counts};
 };
 
+const renderedArtifacts = (manifest) =>
+  (manifest?.records || [])
+    .filter((record) => record.status === 'rendered')
+    .map((record) => ({
+      id: record.id,
+      output: record.output,
+      bytes: record.bytes,
+      seconds: record.ms == null ? null : Number((record.ms / 1000).toFixed(2)),
+    }));
+
 const main = async () => {
   await mkdir(acceptanceDir, {recursive: true});
 
@@ -137,6 +147,7 @@ const main = async () => {
   );
 
   let renderManifest = null;
+  let renderManifestPath = null;
   if (shouldRender) {
     const renderOut = path.join(acceptanceDir, 'render-one');
     steps.push(
@@ -154,7 +165,7 @@ const main = async () => {
         path.relative(root, renderOut),
       ]),
     );
-    const renderManifestPath = await latestManifestUnder(renderOut);
+    renderManifestPath = await latestManifestUnder(renderOut);
     renderManifest = renderManifestPath ? await readJsonIfExists(renderManifestPath) : null;
   } else {
     blockers.push('未执行真实 MP4 渲染；如需合并前完整人工验收，请设置 RUN_ACCEPTANCE_RENDER=1 后重跑。');
@@ -194,6 +205,8 @@ const main = async () => {
         ? {
             total: renderManifest.total,
             summary: renderManifest.summary,
+            manifest: path.relative(root, renderManifestPath),
+            artifacts: renderedArtifacts(renderManifest),
           }
         : shouldRender
           ? null
@@ -216,6 +229,9 @@ const main = async () => {
       `- 自动卡点数量：${report.summary.cuts.count}`,
       `- 批量 dry-run：${JSON.stringify(report.summary.batchDryRun?.summary || null)}`,
       `- 真实渲染：${shouldRender ? JSON.stringify(report.summary.renderOne?.summary || null) : 'skipped'}`,
+      ...(report.summary.renderOne?.artifacts?.length
+        ? report.summary.renderOne.artifacts.map((artifact) => `- 渲染产物：${artifact.output} (${artifact.bytes}B, ${artifact.seconds}s)`)
+        : []),
       '',
       '## 后续事项',
       '',

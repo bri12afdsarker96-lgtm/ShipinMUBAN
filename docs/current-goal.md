@@ -46,6 +46,7 @@
 | 后续阶段立项 | 已完成 | 新增 `docs/stage-execution-backlog.md` |
 | 阶段 3E 验收入口 | 已完成 | 新增 `npm run acceptance:3e` |
 | 阶段 3E 本地验收 | 已完成 | 状态 `passed-with-followups`：封面真实下载待复测，自动卡点和批量 dry-run 通过 |
+| 阶段 3E 真实 MP4 验收 | 已完成 | 1 条视频 rendered，720x1280，约 8.43 秒，约 1.57MB，抽帧非黑屏 |
 
 ## 合并前目标
 
@@ -87,3 +88,6 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
   验收脚本入口。
 - 2026-07-19：执行 `npm.cmd run acceptance:3e`。结果：真实封面查询 4 本均降级 placeholder；
   示例音频生成 14 个切点；示例批量数据 3 条全部 `qc-passed`；综合状态为 `passed-with-followups`。
+- 2026-07-19：开启自动模式后执行 `RUN_ACCEPTANCE_RENDER=1 npm.cmd run acceptance:3e`。结果：
+  `classics-night` 真实 MP4 渲染成功，720x1280，约 8.43 秒，约 1.57MB；5.5 秒抽帧非黑屏，
+  缺真实封面时显示生成式封面。阶段 3E 剩余阻断仍是真实封面下载和 GitHub Billing / CI。

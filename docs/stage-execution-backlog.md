@@ -38,7 +38,7 @@
 | 3E-2 | 真实封面链路复测 | 已完成，需后续复测真实下载 | `out/acceptance/3e/*/acceptance-report.json` |
 | 3E-3 | 自动卡点链路复测 | 已完成 | 切点 JSON 与验收报告 |
 | 3E-4 | 批量 dry-run 复测 | 已完成 | manifest / qc-report / 验收报告 |
-| 3E-5 | 可选真实渲染复测 | 待执行 | 至少 1 条真实 MP4，需浏览器环境 |
+| 3E-5 | 可选真实渲染复测 | 已完成 | 至少 1 条真实 MP4，需浏览器环境 |
 | 3E-6 | GitHub CI 真 runner 复测 | 阻断 | 等待账号 billing / spending limit 恢复 |
 | 3E-7 | PR 状态切换 | 未开始 | CI 绿后从 draft 转 ready |
 
@@ -107,9 +107,19 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 | 批量 dry-run | 示例批量数据 3 条全部 `qc-passed` |
 | 综合状态 | `passed-with-followups` |
 
+已完成 3E-5 真实 MP4 渲染验收：
+
+| 验收项 | 结果 |
+| --- | --- |
+| 执行方式 | `RUN_ACCEPTANCE_RENDER=1 npm run acceptance:3e` |
+| 渲染结果 | `classics-night` 1 条视频 `rendered` |
+| 视频参数 | 720x1280，约 8.43 秒，约 1.57MB，含音频轨 |
+| 画面抽帧 | 5.5 秒抽帧非黑屏，缺真实封面时显示生成式封面 |
+| 综合状态 | `passed-with-followups` |
+
 下一步优先处理两件事：
 
 1. 账号侧恢复 GitHub Billing / spending limit 后，重跑 CI，确认真实 runner 完整 11 项回归。
-2. 有浏览器环境时设置 `RUN_ACCEPTANCE_RENDER=1`，用同一条验收入口补 1 条真实 MP4 渲染记录。
+2. 在网络稳定或代理环境下重跑封面查询，争取让真实封面链路不再全部降级。
 
 若 GitHub Billing 已恢复，则继续执行 3E-6；否则保持 PR draft，不进入 ready for review。
