@@ -19,6 +19,7 @@ import {runBatch} from './batch/lib/run-batch.mjs';
 import {loadAssets} from './lib/assets.mjs';
 import {decodeWav} from './lib/audio/wav.mjs';
 import {detectOnsets, onsetsToFrames} from './lib/audio/onset.mjs';
+import {resolveBookCover} from './lib/covers.mjs';
 
 const root = process.cwd();
 const assets = loadAssets(path.join(process.cwd(), 'config', 'assets.example.json'));
@@ -361,6 +362,38 @@ const handleBeatsDetect = async (req, res) => {
   });
 };
 
+const handleCoverLookup = async (req, res) => {
+  const body = await readJson(req);
+  const title = String(body.title || '').trim();
+  if (!title) return sendJson(res, 400, {ok: false, error: '缺少书名'});
+
+  const book = {
+    title,
+    author: body.author ? String(body.author).trim() : undefined,
+    isbn: body.isbn ? String(body.isbn).trim() : null,
+    coverQuery: body.coverQuery ? String(body.coverQuery).trim() : undefined,
+    coverPath: body.coverPath ? String(body.coverPath).trim() : null,
+  };
+  const warnings = [];
+  const resolved = await resolveBookCover(book, {
+    coversDir: path.join(publicDir, 'covers'),
+    force: body.force === true,
+    log: (message) => console.log(message),
+    warn: (message) => {
+      warnings.push(message);
+      console.warn(message);
+    },
+  });
+
+  return sendJson(res, 200, {
+    ok: true,
+    book: resolved,
+    coverPath: resolved.resolvedCoverPath,
+    coverSource: resolved.coverSource,
+    warnings,
+  });
+};
+
 const server = createServer(async (req, res) => {
   try {
     // 防 DNS-rebinding：只接受本机 Host，挡住外部域名指向 127.0.0.1 的浏览器请求。
@@ -380,6 +413,7 @@ const server = createServer(async (req, res) => {
     if (url === '/api/assets') return await handleAssets(res);
     if (url === '/api/assets/upload' && req.method === 'POST') return await handleAssetUpload(req, res);
     if (url === '/api/beats/detect' && req.method === 'POST') return await handleBeatsDetect(req, res);
+    if (url === '/api/covers/lookup' && req.method === 'POST') return await handleCoverLookup(req, res);
     if (url.startsWith('/api/renders')) return await handleRenders(res);
     if (url === '/api/render' && req.method === 'POST') return await handleRender(req, res);
     if (url === '/api/batches') return await handleBatchesList(res);

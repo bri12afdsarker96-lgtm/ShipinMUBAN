@@ -57,6 +57,7 @@ npm.cmd run server       # 起本地服务，打开 http://127.0.0.1:4000
 | `GET /api/assets` | 素材库清单 |
 | `POST /api/assets/upload` | 上传本地封面到 `public/covers/`，返回可写入配置的素材路径 |
 | `POST /api/beats/detect` | 对本地 WAV 音频做瞬态检测，返回可写入 `flashCutFrames` 的切点帧 |
+| `POST /api/covers/lookup` | 查询并缓存单本书封面，失败时返回 placeholder 降级状态 |
 | 静态 | `gui/dist`（前端）、`public`（音频/封面）、`out`（产物） |
 
 渲染复用 `scripts/batch/lib/render-core.mjs`（打包缓存 + `renderJob`），与批量引擎同一套核心。
@@ -76,4 +77,4 @@ npm.cmd run server       # 起本地服务，打开 http://127.0.0.1:4000
 - 桌面封装（Electron / Tauri）。
 
 已实现：可视化编辑 + 实时预览、导出配置、本地服务一键渲染、批量队列面板（进度/质检/产物/历史归档）、
-主书本地封面上传、界面内自动卡点。
+主书本地封面上传、界面内自动卡点、界面内封面查询。

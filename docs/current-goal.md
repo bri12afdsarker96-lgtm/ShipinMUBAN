@@ -50,6 +50,7 @@
 | 真实封面代理诊断 | 已完成，第三方源待复测 | 脚本已支持 curl 走系统代理；当前 Open Library 为 `503`/超时，Google Books 为 `429` |
 | 阶段 4A 主书封面上传 | 已完成 | GUI 打包通过；上传接口实测通过；`npm test` 6/0 通过 |
 | 阶段 4B 自动卡点按钮 | 已完成 | GUI 打包通过；接口返回 14 个切点；`npm test` 6/0 通过 |
+| 阶段 4B 封面查询按钮 | 已完成 | GUI 打包通过；接口降级路径实测通过；`npm test` 6/0 通过 |
 
 ## 合并前目标
 
@@ -103,3 +104,6 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
 - 2026-07-19：完成阶段 4B 第一版，新增界面内自动卡点能力。验证：`npm.cmd run gui:build`
   通过；`POST /api/beats/detect` 对 `sample-beat.wav` 返回 14 个切点
   `[133,141,146,150,155,160,164,169,172,178,181,187,190,195]`；`npm.cmd test` 6/0 通过。
+- 2026-07-19：完成阶段 4B 第二版，抽出封面查询公共模块，并新增界面内封面查询按钮。
+  验证：`npm.cmd run gui:build` 通过；`npm.cmd run covers -- --force` 降级路径正常；
+  `POST /api/covers/lookup` 返回 `coverSource=placeholder`、3 条 warning、服务存活；`npm.cmd test` 6/0 通过。

@@ -168,6 +168,7 @@ export const App: React.FC = () => {
   const [render, setRender] = useState<{status: 'idle' | 'rendering' | 'done' | 'error'; url?: string; error?: string}>({status: 'idle'});
   const [upload, setUpload] = useState<{status: 'idle' | 'uploading' | 'done' | 'error'; error?: string}>({status: 'idle'});
   const [beats, setBeats] = useState<{status: 'idle' | 'detecting' | 'done' | 'error'; count?: number; error?: string}>({status: 'idle'});
+  const [coverLookup, setCoverLookup] = useState<{status: 'idle' | 'querying' | 'done' | 'placeholder' | 'error'; message?: string}>({status: 'idle'});
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
@@ -205,6 +206,31 @@ export const App: React.FC = () => {
       setUpload({status: 'done'});
     } catch (error) {
       setUpload({status: 'error', error: String(error)});
+    }
+  };
+
+  const lookupMainCover = async () => {
+    if (!apiOk) {
+      setCoverLookup({status: 'error', message: '本地服务未连接'});
+      return;
+    }
+    setCoverLookup({status: 'querying'});
+    try {
+      const res = await fetch('/api/covers/lookup', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({title: form.mainTitle, author: form.mainAuthor, force: true}),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '查询失败');
+      if (data.coverPath) {
+        set('mainCoverPath', data.coverPath);
+        setCoverLookup({status: 'done', message: `封面来源：${data.coverSource}`});
+      } else {
+        setCoverLookup({status: 'placeholder', message: '未找到真实封面，已保持生成式封面降级'});
+      }
+    } catch (error) {
+      setCoverLookup({status: 'error', message: String(error)});
     }
   };
 
@@ -395,8 +421,14 @@ export const App: React.FC = () => {
               {upload.status === 'uploading' ? '上传中' : '上传'}
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadMainCover(e.target.files?.[0])} style={{display: 'none'}} />
             </label>
+            <button type="button" onClick={lookupMainCover} disabled={!apiOk || coverLookup.status === 'querying'} style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+              {coverLookup.status === 'querying' ? '查询中' : '查询'}
+            </button>
           </div>
           {upload.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginTop: 6}}>{upload.error}</div> : null}
+          {coverLookup.status === 'done' ? <div style={{fontSize: 12, color: '#16a34a', marginTop: 6}}>{coverLookup.message}</div> : null}
+          {coverLookup.status === 'placeholder' ? <div style={{fontSize: 12, color: '#b07d2b', marginTop: 6}}>{coverLookup.message}</div> : null}
+          {coverLookup.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginTop: 6}}>{coverLookup.message}</div> : null}
           {form.mainCoverPath ? <img src={publicAssetUrl(form.mainCoverPath)} alt="主书封面" style={{width: 68, height: 96, objectFit: 'cover', borderRadius: 6, marginTop: 8, border: '1px solid #d3d9e0'}} /> : null}
         </Field>
         <Field label="主书 · 中文金句">
