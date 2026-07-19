@@ -38,7 +38,7 @@
 | --- | --- | --- |
 | 明确当前目标与验收边界 | 已完成 | 新增本文档，并更新根 README 的当前状态 |
 | 真实封面查询 smoke test | 已完成 | 当前环境 Open Library / Google Books 均 `fetch failed`，4 本书全部降级 placeholder |
-| 阶段成果推送到 GitHub | 进行中 | 本阶段文档更新完成后提交并推送 |
+| 阶段成果推送到 GitHub | 已完成 | 本阶段文档已推送到 PR #2 分支，远端提交 `4a11d9a` |
 
 ## 合并前目标
 
@@ -74,3 +74,5 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
 - 2026-07-19：执行 `npm.cmd run covers`，Open Library / Google Books 均 `fetch failed`，输出
   `books.resolved.json` 中 4 本书 `coverSource` 均为 `placeholder`。结论：封面降级链路可用，
   但真实封面下载仍未在当前网络环境闭环。
+- 2026-07-19：本地 `git push` 因 GitHub 443 连接失败未完成，改用 GitHub Git Data API 将本阶段
+  文档成果推送到 `claude/shipinmubam-handoff-avn529`，远端提交 `4a11d9a`。
