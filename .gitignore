@@ -22,3 +22,4 @@ book-intro-maker/public/audio/*
 book-intro-maker/config/*.resolved.json
 
 book-intro-maker/gui/dist/
+book-intro-maker/release/

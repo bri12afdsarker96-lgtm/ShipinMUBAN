@@ -1,7 +1,9 @@
 {
-  "name": "book-intro-maker",
-  "version": "0.1.0",
+  "name": "mercury-video-template",
+  "version": "0.2.0",
+  "productName": "水星视频模板",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "studio": "remotion studio src/index.ts --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
     "render": "remotion render src/index.ts BookIntro out/book-intro-v1.mp4 --browser-executable=\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"",
@@ -13,6 +15,9 @@
     "gui": "node scripts/build-gui.mjs --serve",
     "gui:build": "node scripts/build-gui.mjs",
     "server": "node scripts/server.mjs",
+    "desktop": "npm run gui:build && electron electron/main.cjs",
+    "pack:win": "npm run gui:build && electron-builder --win --dir",
+    "dist:win": "npm run gui:build && electron-builder --win nsis",
     "test": "node scripts/test-regressions.mjs"
   },
   "dependencies": {
@@ -25,6 +30,44 @@
   "devDependencies": {
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "electron": "38.3.0",
+    "electron-builder": "26.0.12",
     "typescript": "5.9.3"
+  },
+  "build": {
+    "appId": "com.mercury.video-template",
+    "productName": "水星视频模板",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "gui/dist/**/*",
+      "scripts/**/*",
+      "src/**/*",
+      "config/**/*",
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "水星视频模板",
+      "artifactName": "水星视频模板-Setup-${version}.${ext}"
+    }
   }
 }

@@ -193,6 +193,19 @@ const buildRaw = (form: Form): RawConfigInput => {
 
 const labelStyle: React.CSSProperties = {display: 'block', fontSize: 12, color: '#5b6472', marginBottom: 4, marginTop: 14, fontWeight: 600};
 const inputStyle: React.CSSProperties = {width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d3d9e0', borderRadius: 8, fontSize: 14, background: '#fff'};
+const softButtonStyle: React.CSSProperties = {padding: '8px 13px', borderRadius: 4, border: '1px solid #d7deea', background: '#eef2fb', color: '#2b3a67', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'};
+const sidebarButtonStyle = (active: boolean): React.CSSProperties => ({
+  width: '100%',
+  padding: '16px 15px',
+  border: 'none',
+  borderRadius: 0,
+  textAlign: 'left',
+  background: active ? '#3c4778' : '#252d59',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 14,
+  lineHeight: 1.55,
+});
 
 const Field: React.FC<{label: string; children: React.ReactNode}> = ({label, children}) => (
   <label>
@@ -534,23 +547,79 @@ export const App: React.FC = () => {
     </div>
   );
 
-  const tabBtn = (v: 'edit' | 'batch', label: string) => (
-    <button onClick={() => setView(v)} style={{padding: '10px 16px', border: 'none', borderBottom: view === v ? '2px solid #2f6bff' : '2px solid transparent', background: 'transparent', fontSize: 14, fontWeight: 600, color: view === v ? '#2f6bff' : '#6b7480', cursor: 'pointer'}}>
-      {label}
-    </button>
-  );
+  const primaryAction = view === 'batch' ? startBatch : renderNow;
+  const primaryDisabled = view === 'batch' ? !apiOk || batch.running : !apiOk || render.status === 'rendering';
+  const stopDisabled = view !== 'batch' || !apiOk || !batch.jobId || !batch.running || batch.paused;
 
   return (
-    <div style={{display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#1b2430'}}>
-      <div style={{display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid #e6eaf0', background: '#fff', flexShrink: 0}}>
-        {tabBtn('edit', '编辑器')}
-        {tabBtn('batch', '批量队列')}
+    <div style={{display: 'flex', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#101a36', background: '#f1f4fa'}}>
+      <aside style={{width: 300, flexShrink: 0, background: '#151b36', color: '#fff', display: 'flex', flexDirection: 'column', padding: '34px 23px 22px'}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 22, marginBottom: 36}}>
+          <div style={{width: 78, height: 78, borderRadius: 18, background: 'linear-gradient(135deg, #25bcd3, #7652ff)', position: 'relative', boxShadow: '0 14px 30px rgba(0,0,0,0.22)'}}>
+            <div style={{position: 'absolute', inset: 18, border: '5px solid #fff', borderRadius: 999}} />
+            <div style={{position: 'absolute', left: 36, top: 18, width: 7, height: 37, background: '#fff'}} />
+            <div style={{position: 'absolute', left: 28, top: 48, width: 24, height: 7, background: '#fff', transform: 'rotate(45deg)', transformOrigin: 'right center'}} />
+            <div style={{position: 'absolute', left: 28, top: 48, width: 24, height: 7, background: '#fff', transform: 'rotate(-45deg)', transformOrigin: 'right center'}} />
+            <div style={{position: 'absolute', left: 12, right: 12, top: 35, height: 8, borderTop: '4px solid #fff', borderBottom: '4px solid #fff', borderRadius: 999, opacity: 0.95}} />
+          </div>
+          <div>
+            <div style={{fontSize: 24, fontWeight: 800, letterSpacing: 0}}>水星视频模板</div>
+            <div style={{fontSize: 12, color: '#9fc5ff', marginTop: 4}}>MERCURY VIDEO TEMPLATE</div>
+          </div>
+        </div>
+
+        <div style={{fontSize: 13, color: '#73c7ff', margin: '0 0 10px'}}>模板入口</div>
+        <div style={{display: 'grid', gap: 8}}>
+          <button type="button" onClick={() => setView('edit')} style={sidebarButtonStyle(view === 'edit')}>
+            <div style={{fontWeight: 700}}>视频模板制作</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>书封快闪、主书页、字幕与素材</div>
+          </button>
+          <button type="button" onClick={() => setView('batch')} style={sidebarButtonStyle(view === 'batch')}>
+            <div style={{fontWeight: 700}}>批量生产队列</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>读取 JSON/CSV 批量渲染</div>
+          </button>
+        </div>
+
+        <div style={{fontSize: 13, color: '#73c7ff', margin: '30px 0 10px'}}>通用操作</div>
+        <div style={{display: 'grid', gap: 8}}>
+          <button type="button" onClick={() => setView('edit')} style={sidebarButtonStyle(false)}>
+            <div style={{fontWeight: 700}}>素材替换</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>封面、背景、开场视频、音乐</div>
+          </button>
+          <button type="button" onClick={() => setView('batch')} style={sidebarButtonStyle(false)}>
+            <div style={{fontWeight: 700}}>任务列表</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>进度、失败原因、重试</div>
+          </button>
+        </div>
+
+        <div style={{height: 1, background: '#303963', margin: '26px 0'}} />
+        <div style={{marginTop: 'auto', fontSize: 13, lineHeight: 1.9}}>
+          <div style={{color: '#9fc5ff'}}>当前状态</div>
+          <div style={{fontWeight: 700}}>{apiOk ? '本地服务运行中' : '等待本地服务'}</div>
+          <div style={{color: '#9aa7d7'}}>v0.2.0</div>
+        </div>
+      </aside>
+
+      <main style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+      <div style={{height: 118, padding: '28px 24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0}}>
+        <div>
+          <h1 style={{fontSize: 30, margin: '0 0 8px', color: '#101a36'}}>{view === 'edit' ? '书籍短视频模板' : '批量生产队列'}</h1>
+          <div style={{fontSize: 13, color: '#52607a'}}>{view === 'edit' ? '输入书籍信息，替换素材，预览并生成竖屏 MP4。' : '导入批量数据，查看渲染进度、失败原因与输出位置。'}</div>
+        </div>
+        <div style={{display: 'flex', gap: 10}}>
+          <button type="button" onClick={primaryAction} disabled={primaryDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: primaryDisabled ? '#9bb4e8' : '#6d45f5', color: '#fff', fontSize: 14, fontWeight: 700, cursor: primaryDisabled ? 'default' : 'pointer'}}>
+            {view === 'batch' ? '全部开始' : render.status === 'rendering' ? '生成中' : '开始生成'}
+          </button>
+          <button type="button" onClick={() => controlBatch('pause')} disabled={stopDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: stopDisabled ? '#f7dfdd' : '#ffd9d6', color: '#b53027', fontSize: 14, fontWeight: 700, cursor: stopDisabled ? 'default' : 'pointer'}}>
+            停止全部
+          </button>
+        </div>
       </div>
-      <div style={{display: view === 'edit' ? 'flex' : 'none', flex: 1, minHeight: 0}}>
+      <div style={{display: view === 'edit' ? 'flex' : 'none', flex: 1, minHeight: 0, gap: 14, padding: '0 24px 22px'}}>
       {/* 编辑面板 */}
-      <div style={{width: 380, padding: '20px 22px', overflowY: 'auto', borderRight: '1px solid #e6eaf0', background: '#f7f9fc'}}>
-        <h1 style={{fontSize: 18, margin: '0 0 4px'}}>书籍短视频编辑器</h1>
-        <div style={{fontSize: 12, color: '#8a93a0'}}>编辑 → 实时预览 → 导出配置给批量引擎</div>
+      <div style={{width: 390, padding: '20px 20px', overflowY: 'auto', border: '1px solid #e5eaf3', background: '#fff'}}>
+        <h2 style={{fontSize: 24, margin: '0 0 6px'}}>输入内容</h2>
+        <div style={{fontSize: 12, color: '#6d7890'}}>模板、素材、书单与字幕</div>
         {upload.status === 'uploading' ? <div style={{fontSize: 12, color: '#2f6bff', marginTop: 8}}>正在上传：{upload.message}</div> : null}
         {upload.status === 'done' ? <div style={{fontSize: 12, color: '#16a34a', marginTop: 8}}>已上传：{upload.message}</div> : null}
         {upload.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginTop: 8}}>{upload.message}</div> : null}
@@ -567,7 +636,7 @@ export const App: React.FC = () => {
         <Field label="背景音乐（相对 public 路径或远程链接）">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.audio} onChange={(e) => set('audio', e.target.value)} />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               上传
               <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('audio', 'audio', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
@@ -576,7 +645,7 @@ export const App: React.FC = () => {
         <Field label="快闪段背景图">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.flashBackgroundPath} onChange={(e) => set('flashBackgroundPath', e.target.value)} placeholder="backgrounds/flash.jpg" />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'flashBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
@@ -586,7 +655,7 @@ export const App: React.FC = () => {
         <Field label="快闪切点帧">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.flashCutFramesText} onChange={(e) => set('flashCutFramesText', e.target.value)} placeholder="134, 142, 146..." />
-            <button type="button" onClick={detectBeats} disabled={!apiOk || beats.status === 'detecting'} style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <button type="button" onClick={detectBeats} disabled={!apiOk || beats.status === 'detecting'} style={softButtonStyle}>
               {beats.status === 'detecting' ? '检测中' : '自动卡点'}
             </button>
           </div>
@@ -603,11 +672,11 @@ export const App: React.FC = () => {
         <Field label="主书 · 本地封面">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.mainCoverPath} onChange={(e) => set('mainCoverPath', e.target.value)} placeholder="covers/book.jpg" />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               {upload.status === 'uploading' ? '上传中' : '上传'}
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('covers', 'mainCoverPath', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
-            <button type="button" onClick={lookupMainCover} disabled={!apiOk || coverLookup.status === 'querying'} style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <button type="button" onClick={lookupMainCover} disabled={!apiOk || coverLookup.status === 'querying'} style={softButtonStyle}>
               {coverLookup.status === 'querying' ? '查询中' : '查询'}
             </button>
           </div>
@@ -619,7 +688,7 @@ export const App: React.FC = () => {
         <Field label="主书 · 背景图">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.mainBackgroundPath} onChange={(e) => set('mainBackgroundPath', e.target.value)} placeholder="backgrounds/main.jpg" />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'mainBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
@@ -636,7 +705,7 @@ export const App: React.FC = () => {
         <Field label="快闪书单（每行一本：书名 | 作者 | 封面路径）">
           <textarea style={{...inputStyle, height: 110, resize: 'vertical', fontFamily: 'inherit'}} value={form.flashBooksText} onChange={(e) => set('flashBooksText', e.target.value)} />
           <div style={{display: 'flex', gap: 8, alignItems: 'center', marginTop: 8}}>
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               按行上传封面
               <input type="file" multiple accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadFlashCovers(e.target.files)} style={{display: 'none'}} />
             </label>
@@ -655,7 +724,7 @@ export const App: React.FC = () => {
                     </div>
                     <input style={{...inputStyle, marginTop: 6, padding: '6px 8px', fontSize: 12}} value={book.coverPath || ''} onChange={(e) => updateFlashBook(index, {coverPath: e.target.value})} placeholder="covers/book.jpg" />
                   </div>
-                  <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+                  <label style={softButtonStyle}>
                     上传
                     <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadFlashCoverAt(index, e.target.files?.[0])} style={{display: 'none'}} />
                   </label>
@@ -687,7 +756,7 @@ export const App: React.FC = () => {
         <Field label="开场视频">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.introVideoPath} onChange={(e) => set('introVideoPath', e.target.value)} placeholder="intro-videos/opening.mp4" />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               上传
               <input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('introVideos', 'introVideoPath', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
@@ -696,7 +765,7 @@ export const App: React.FC = () => {
         <Field label="开场生成背景图">
           <div style={{display: 'flex', gap: 8}}>
             <input style={{...inputStyle, flex: 1}} value={form.introBackgroundPath} onChange={(e) => set('introBackgroundPath', e.target.value)} placeholder="backgrounds/intro.jpg" />
-            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+            <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'introBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
             </label>
@@ -709,7 +778,7 @@ export const App: React.FC = () => {
       </div>
 
       {/* 预览 */}
-      <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#11151c'}}>
+      <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#101827', border: '1px solid #e5eaf3'}}>
         <div style={{boxShadow: '0 20px 60px rgba(0,0,0,0.5)', borderRadius: 12, overflow: 'hidden'}}>
           <Player
             component={BookIntroFromConfig}
@@ -727,8 +796,8 @@ export const App: React.FC = () => {
       </div>
 
       {/* 渲染 + 导出 */}
-      <div style={{width: 320, padding: '20px 18px', borderLeft: '1px solid #e6eaf0', background: '#f7f9fc', display: 'flex', flexDirection: 'column'}}>
-        <h2 style={{fontSize: 15, margin: '0 0 8px'}}>渲染 MP4</h2>
+      <div style={{width: 340, padding: '20px 18px', border: '1px solid #e5eaf3', background: '#fff', display: 'flex', flexDirection: 'column'}}>
+        <h2 style={{fontSize: 24, margin: '0 0 16px'}}>渲染设置</h2>
         {apiOk ? (
           <button
             id="render-btn"
@@ -765,9 +834,10 @@ export const App: React.FC = () => {
         </pre>
       </div>
       </div>
-      <div style={{display: view === 'batch' ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'auto', background: '#f7f9fc'}}>
+        <div style={{display: view === 'batch' ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'auto', background: '#f1f4fa', padding: '0 24px 22px'}}>
         {batchView}
       </div>
+      </main>
     </div>
   );
 };
