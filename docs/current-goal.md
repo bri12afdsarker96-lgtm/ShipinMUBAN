@@ -51,6 +51,7 @@
 | 阶段 4A 主书封面上传 | 已完成 | GUI 打包通过；上传接口实测通过；`npm test` 6/0 通过 |
 | 阶段 4B 自动卡点按钮 | 已完成 | GUI 打包通过；接口返回 14 个切点；`npm test` 6/0 通过 |
 | 阶段 4B 封面查询按钮 | 已完成 | GUI 打包通过；接口降级路径实测通过；`npm test` 6/0 通过 |
+| 阶段 4C 批量队列控制 | 已完成 | 暂停/恢复/单条重试/失败原因展示完成；`npm test` 12/0 通过 |
 
 ## 合并前目标
 
@@ -107,3 +108,6 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
 - 2026-07-19：完成阶段 4B 第二版，抽出封面查询公共模块，并新增界面内封面查询按钮。
   验证：`npm.cmd run gui:build` 通过；`npm.cmd run covers -- --force` 降级路径正常；
   `POST /api/covers/lookup` 返回 `coverSource=placeholder`、3 条 warning、服务存活；`npm.cmd test` 6/0 通过。
+- 2026-07-19：完成阶段 4C 第一版，批量队列新增暂停、恢复、单条重试和失败原因展示。
+  验证：`node --check` 通过；`npx.cmd tsc --noEmit` 通过；`npm.cmd run gui:build` 通过；
+  `npm.cmd test` 12/0 通过；接口冒烟确认暂停/恢复状态正确，质检失败原因可见，单条重试写回原记录位置。

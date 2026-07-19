@@ -54,8 +54,31 @@ const SAMPLE_BATCH = JSON.stringify(
   2,
 );
 
-type BatchRecord = {index: number; id: string; status: string; qc?: {warnings: string[]; infos: string[]}; url?: string; ms?: number; error?: string};
-const STATUS_LABEL: Record<string, string> = {queued: '排队中', rendering: '渲染中', rendered: '完成', failed: '失败', 'qc-failed': '质检未过'};
+type BatchRecord = {
+  index: number;
+  id: string;
+  status: string;
+  qc?: {errors?: string[]; warnings: string[]; infos: string[]};
+  url?: string;
+  ms?: number;
+  error?: string;
+  previousStatus?: string;
+  previousError?: string;
+  retriedAt?: string;
+};
+type BatchState = {
+  jobId?: string;
+  total?: number;
+  records: BatchRecord[];
+  running: boolean;
+  paused: boolean;
+  status?: string;
+  error?: string;
+  waitingIndex?: number | null;
+  retrying: number[];
+};
+const STATUS_LABEL: Record<string, string> = {queued: '排队中', paused: '已暂停', rendering: '渲染中', rendered: '完成', failed: '失败', 'qc-failed': '质检未过'};
+const RETRYABLE_BATCH_STATUSES = new Set(['failed', 'qc-failed']);
 
 // 默认节奏卡点（与 scripts/batch/lib/row-to-config.mjs 的 defaultCutFrames 一致）。
 const defaultCutFrames = (count: number): number[] => {
@@ -72,6 +95,29 @@ const parseFrameList = (value: string): number[] | null => {
     .filter((n) => Number.isFinite(n) && n >= 0)
     .map((n) => Math.round(n));
   return frames.length > 0 ? Array.from(new Set(frames)).sort((a, b) => a - b) : null;
+};
+
+const normalizeBatchState = (data: any): BatchState => ({
+  jobId: data.jobId,
+  total: data.total,
+  records: Array.isArray(data.records) ? data.records : [],
+  running: Boolean(data.running),
+  paused: Boolean(data.paused),
+  status: data.status,
+  error: data.error,
+  waitingIndex: Number.isInteger(data.waitingIndex) ? data.waitingIndex : null,
+  retrying: Array.isArray(data.retrying) ? data.retrying.filter((n: unknown) => Number.isInteger(n)) : [],
+});
+
+const batchProblemText = (record?: BatchRecord | null): string => {
+  if (!record) return '—';
+  const errors = record.qc?.errors || [];
+  const warnings = record.qc?.warnings || [];
+  if (record.error) return record.error;
+  if (errors.length > 0) return errors.join('；');
+  if (warnings.length > 0) return `${warnings.length} 条警告：${warnings.slice(0, 2).join('；')}`;
+  if (record.previousError) return `上次失败：${record.previousError}`;
+  return '—';
 };
 
 const buildRaw = (form: Form): RawConfigInput => {
@@ -261,14 +307,14 @@ export const App: React.FC = () => {
     typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'batch' ? 'batch' : 'edit',
   );
   const [batchText, setBatchText] = useState(SAMPLE_BATCH);
-  const [batch, setBatch] = useState<{jobId?: string; records: BatchRecord[]; running: boolean}>({records: [], running: false});
+  const [batch, setBatch] = useState<BatchState>({records: [], running: false, paused: false, retrying: []});
   useEffect(() => {
     if (!batch.jobId || !batch.running) return undefined;
     const timer = setInterval(async () => {
       try {
         const res = await fetch(`/api/batch/${batch.jobId}`);
         const data = await res.json();
-        setBatch((b) => ({...b, records: data.records || [], running: data.running}));
+        if (data.ok !== false) setBatch(normalizeBatchState(data));
       } catch {
         /* 忽略单次轮询失败 */
       }
@@ -286,19 +332,49 @@ export const App: React.FC = () => {
     try {
       const res = await fetch('/api/batch', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({videos})});
       const data = await res.json();
-      if (data.jobId) setBatch({jobId: data.jobId, records: [], running: true});
+      if (data.jobId) setBatch(normalizeBatchState(data));
       else alert(data.error || '启动失败');
     } catch (e) {
       alert(String(e));
+    }
+  };
+  const controlBatch = async (action: 'pause' | 'resume') => {
+    if (!batch.jobId) return;
+    try {
+      const res = await fetch(`/api/batch/${batch.jobId}/${action}`, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        alert(data.error || '队列控制失败');
+        return;
+      }
+      setBatch(normalizeBatchState(data));
+    } catch (error) {
+      alert(String(error));
+    }
+  };
+  const retryBatchRecord = async (index: number) => {
+    if (!batch.jobId) return;
+    try {
+      const res = await fetch(`/api/batch/${batch.jobId}/retry`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({index})});
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        alert(data.error || '重试失败');
+        return;
+      }
+      setBatch(normalizeBatchState(data));
+    } catch (error) {
+      alert(String(error));
     }
   };
   const useCurrentInBatch = () => {
     setBatchText(JSON.stringify([{id: form.mainTitle || 'video', ...raw}], null, 2));
   };
   const doneCount = batch.records.filter((r) => r && ['rendered', 'failed', 'qc-failed'].includes(r.status)).length;
+  const batchTotal = batch.total || batch.records.length;
+  const batchStatusText = batch.paused ? '已暂停' : batch.status === 'retrying' ? '单条重试中' : batch.running ? '进行中' : batch.jobId ? '已结束' : '未开始';
 
   // 批量历史（服务端归档，重启后仍可见）
-  const [batches, setBatches] = useState<{jobId: string; total?: number; summary?: Record<string, number>; running?: boolean; createdAt?: string}[]>([]);
+  const [batches, setBatches] = useState<{jobId: string; total?: number; summary?: Record<string, number>; running?: boolean; paused?: boolean; status?: string; createdAt?: string}[]>([]);
   useEffect(() => {
     if (view !== 'batch' || !apiOk) return;
     fetch('/api/batches')
@@ -311,18 +387,26 @@ export const App: React.FC = () => {
     <div style={{padding: 24, width: '100%', maxWidth: 960, margin: '0 auto', boxSizing: 'border-box'}}>
       <h2 style={{fontSize: 17, margin: '0 0 6px'}}>批量渲染队列</h2>
       <div style={{fontSize: 13, color: '#8a93a0', marginBottom: 10}}>
-        粘贴批量数据（JSON 数组，字段同 <code>config/batch/sample.json</code>），逐条排队渲染并显示进度与质检。
+        粘贴批量数据（JSON 数组，字段同 <code>config/batch/sample.json</code>），逐条排队渲染并显示进度与失败原因。
       </div>
       <textarea value={batchText} onChange={(e) => setBatchText(e.target.value)} style={{width: '100%', height: 150, boxSizing: 'border-box', padding: 10, border: '1px solid #d3d9e0', borderRadius: 8, fontFamily: 'ui-monospace, monospace', fontSize: 12}} />
       <div style={{display: 'flex', gap: 10, alignItems: 'center', margin: '10px 0 18px'}}>
         <button onClick={startBatch} disabled={!apiOk || batch.running} style={{padding: '9px 16px', border: 'none', borderRadius: 8, background: !apiOk || batch.running ? '#9bb4e8' : '#16a34a', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer'}}>
-          {batch.running ? `渲染中… ${doneCount}/${batch.records.length}` : '开始批量渲染'}
+          {batch.running ? `渲染中… ${doneCount}/${batchTotal || batch.records.length}` : '开始批量渲染'}
+        </button>
+        <button onClick={() => controlBatch('pause')} disabled={!apiOk || !batch.jobId || !batch.running || batch.paused} style={{padding: '9px 14px', border: '1px solid #cdd5df', borderRadius: 8, background: !apiOk || !batch.jobId || !batch.running || batch.paused ? '#eef2f6' : '#fff', fontSize: 13, cursor: 'pointer'}}>
+          暂停
+        </button>
+        <button onClick={() => controlBatch('resume')} disabled={!apiOk || !batch.jobId || !batch.running || !batch.paused} style={{padding: '9px 14px', border: '1px solid #cdd5df', borderRadius: 8, background: !apiOk || !batch.jobId || !batch.running || !batch.paused ? '#eef2f6' : '#fff', fontSize: 13, cursor: 'pointer'}}>
+          恢复
         </button>
         <button onClick={useCurrentInBatch} style={{padding: '9px 14px', border: '1px solid #cdd5df', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer'}}>
           用当前编辑配置
         </button>
+        {batch.jobId ? <span style={{fontSize: 12, color: '#6b7480'}}>任务：{batchStatusText}</span> : null}
         {!apiOk ? <span style={{fontSize: 12, color: '#8a93a0'}}>需本地服务（npm run server）</span> : null}
       </div>
+      {batch.error ? <div style={{fontSize: 12, color: '#d33', margin: '-8px 0 14px'}}>队列错误：{batch.error}</div> : null}
 
       {batch.records.length > 0 ? (
         <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
@@ -331,8 +415,9 @@ export const App: React.FC = () => {
               <th style={{padding: '8px 6px'}}>#</th>
               <th style={{padding: '8px 6px'}}>ID</th>
               <th style={{padding: '8px 6px'}}>状态</th>
-              <th style={{padding: '8px 6px'}}>质检</th>
+              <th style={{padding: '8px 6px'}}>问题</th>
               <th style={{padding: '8px 6px'}}>产物</th>
+              <th style={{padding: '8px 6px'}}>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -344,8 +429,17 @@ export const App: React.FC = () => {
                   {r ? STATUS_LABEL[r.status] || r.status : '等待'}
                   {r?.ms ? <span style={{color: '#9aa4b0'}}> · {(r.ms / 1000).toFixed(1)}s</span> : null}
                 </td>
-                <td style={{padding: '8px 6px', color: '#b07d2b'}}>{r?.qc && r.qc.warnings.length ? `${r.qc.warnings.length} 警告` : r?.error ? r.error : '—'}</td>
+                <td style={{padding: '8px 6px', color: r?.error || (r?.qc?.errors || []).length ? '#d33' : '#b07d2b'}}>{batchProblemText(r)}</td>
                 <td style={{padding: '8px 6px'}}>{r?.url ? (<a href={r.url} target="_blank" rel="noreferrer" style={{color: '#2f6bff'}}>播放</a>) : '—'}</td>
+                <td style={{padding: '8px 6px'}}>
+                  {r && RETRYABLE_BATCH_STATUSES.has(r.status) ? (
+                    <button onClick={() => retryBatchRecord(i)} disabled={!apiOk || batch.running || batch.retrying.includes(i)} style={{padding: '5px 9px', border: '1px solid #cdd5df', borderRadius: 8, background: !apiOk || batch.running || batch.retrying.includes(i) ? '#eef2f6' : '#fff', fontSize: 12, cursor: 'pointer'}}>
+                      {batch.retrying.includes(i) ? '重试中' : '重试'}
+                    </button>
+                  ) : (
+                    '—'
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -358,7 +452,7 @@ export const App: React.FC = () => {
           {batches.map((b) => (
             <div key={b.jobId} style={{display: 'flex', gap: 12, fontSize: 12, color: '#6b7480', padding: '5px 0', borderBottom: '1px solid #eef1f5'}}>
               <span style={{fontFamily: 'ui-monospace, monospace'}}>{b.jobId}</span>
-              <span>{b.running ? '进行中…' : b.summary ? Object.entries(b.summary).map(([k, v]) => `${k}:${v}`).join('  ') : '—'}</span>
+              <span>{b.running ? (b.paused ? '已暂停' : '进行中…') : b.summary ? Object.entries(b.summary).map(([k, v]) => `${k}:${v}`).join('  ') : b.status || '—'}</span>
               <span style={{color: '#9aa4b0', marginLeft: 'auto'}}>{b.createdAt ? b.createdAt.slice(0, 19).replace('T', ' ') : ''}</span>
             </div>
           ))}

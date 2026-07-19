@@ -15,8 +15,8 @@ import {runPool} from './pool.mjs';
 import {getBundle, renderJob} from './render-core.mjs';
 
 /** 行数组 -> 已解析素材、已自动卡点的 job 数组（不渲染）。 */
-export const prepareJobs = (rows, {root, assets}) => {
-  const jobs = rows.map((row, i) => rowToConfig(row, i));
+export const prepareJobs = (rows, {root, assets, indexOffset = 0}) => {
+  const jobs = rows.map((row, i) => rowToConfig(row, i + indexOffset));
   if (assets) {
     for (const job of jobs) resolveAssetsInJob(job, assets);
   }
@@ -50,21 +50,36 @@ export const prepareJobs = (rows, {root, assets}) => {
  * 每条状态变化时调用（status: queued/rendering/rendered/failed/qc-failed）。
  * 返回最终 records 数组。
  */
-export const runBatch = async ({rows, root, assets, browserExecutable, concurrency = 1, retries = 1, outDir, onProgress = () => {}}) => {
-  const jobs = prepareJobs(rows, {root, assets});
+export const runBatch = async ({
+  rows,
+  root,
+  assets,
+  browserExecutable,
+  concurrency = 1,
+  retries = 1,
+  outDir,
+  indexOffset = 0,
+  beforeItem = async () => {},
+  onProgress = () => {},
+}) => {
+  const jobs = prepareJobs(rows, {root, assets, indexOffset});
   await mkdir(outDir, {recursive: true});
   const serveUrl = await getBundle(root);
 
   const prepared = jobs.map((job) => ({job, qc: runQc(job, root)}));
-  prepared.forEach(({job, qc}, index) =>
-    onProgress({index, id: job.id, status: qc.errors.length ? 'qc-failed' : 'queued', qc: {errors: qc.errors, warnings: qc.warnings, infos: qc.infos}}),
-  );
+  prepared.forEach(({job, qc}, localIndex) => {
+    const index = localIndex + indexOffset;
+    onProgress({index, id: job.id, status: qc.errors.length ? 'qc-failed' : 'queued', qc: {errors: qc.errors, warnings: qc.warnings, infos: qc.infos}});
+  });
 
   const records = await runPool(
     prepared,
-    async ({job, qc}, index) => {
+    async ({job, qc}, localIndex) => {
+      const index = localIndex + indexOffset;
       const qcObj = {errors: qc.errors, warnings: qc.warnings, infos: qc.infos};
       const base = {index, id: job.id, template: job.template, qc: qcObj};
+
+      await beforeItem(base);
 
       if (qc.errors.length) {
         const rec = {...base, status: 'qc-failed'};

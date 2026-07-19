@@ -8,8 +8,10 @@
 //   - books/批量渲染集成测试需要 BROWSER_EXECUTABLE（或本机 Chrome），未设则跳过并提示。
 
 import {spawn} from 'node:child_process';
+import {rm} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import {runBatch} from './batch/lib/run-batch.mjs';
 import {rowToConfig} from './batch/lib/row-to-config.mjs';
 
 const PORT = 4999;
@@ -34,6 +36,36 @@ ok(rowToConfig({id: '..\\escape'}, 0).id === 'escape', "'..\\\\escape' -> 'escap
 ok(!/[/\\.]/.test(rowToConfig({id: '../../etc/passwd'}, 0).id), '路径字符（. / \\）被清除');
 ok(rowToConfig({id: '正常ID_1'}, 0).id === '正常ID_1', '合法 id（中文/下划线）保留');
 
+// —— 单元：队列控制等待点 + 单条重试行号（无需浏览器）——
+console.log('单元：批量队列控制');
+const queueTestOut = path.join(process.cwd(), 'out', 'test-queue-control');
+await rm(queueTestOut, {recursive: true, force: true});
+let releaseQueueItem;
+let beforeItemBase = null;
+const beforeItemReached = new Promise((resolve) => {
+  releaseQueueItem = () => resolve();
+});
+const waitGate = new Promise((resolve) => {
+  const run = runBatch({
+    rows: [{id: 'retry-me', books: {flashBooks: [], mainBook: {title: ''}}, subtitles: {tracks: []}, intro: {mode: 'generated'}}],
+    root: process.cwd(),
+    outDir: queueTestOut,
+    indexOffset: 4,
+    beforeItem: async (base) => {
+      beforeItemBase = base;
+      resolve();
+      await beforeItemReached;
+    },
+  });
+  globalThis.__queueControlRun = run;
+});
+await Promise.race([waitGate, sleep(15000)]);
+ok(beforeItemBase?.index === 4, '等待点保留原始行号（单条重试写回原位置）');
+releaseQueueItem();
+const queueRecords = await globalThis.__queueControlRun;
+ok(queueRecords[0]?.index === 4 && queueRecords[0]?.status === 'qc-failed', '等待释放后按原行号返回质检失败记录');
+await rm(queueTestOut, {recursive: true, force: true});
+
 const waitHealth = async () => {
   for (let i = 0; i < 40; i++) {
     try {
@@ -44,6 +76,15 @@ const waitHealth = async () => {
     await sleep(500);
   }
   return false;
+};
+
+const waitBatchDone = async (jobId) => {
+  for (let i = 0; i < 40; i++) {
+    const d = await (await fetch(`${B}/api/batch/${jobId}`)).json();
+    if (!d.running) return d;
+    await sleep(500);
+  }
+  return null;
 };
 
 const srv = spawn('node', [path.join('scripts', 'server.mjs')], {env: {...process.env, PORT: String(PORT)}, stdio: 'ignore'});
@@ -66,6 +107,26 @@ try {
     ok(status413 === 413, `5MB -> 413（实得 ${status413}）`);
     ok((await fetch(`${B}/api/health`)).ok, '413 后服务存活');
     ok((await fetch(`${B}/api/health`)).ok, '413 后可再次请求（连接未脏）');
+
+    // —— 集成：批量队列失败原因 + 单条重试入口（无需渲染）——
+    console.log('集成：批量队列控制');
+    const badBatch = await (
+      await fetch(`${B}/api/batch`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({
+          videos: [{id: 'bad-qc', books: {flashBooks: [], mainBook: {title: ''}}, subtitles: {tracks: []}, intro: {mode: 'generated'}}],
+        }),
+      })
+    ).json();
+    const badDone = badBatch.jobId ? await waitBatchDone(badBatch.jobId) : null;
+    ok(badDone?.records?.[0]?.status === 'qc-failed', '质检失败条目进入 qc-failed');
+    ok((badDone?.records?.[0]?.qc?.errors || []).some((msg) => msg.includes('主书标题为空')), '失败原因返回到队列记录');
+    const retryRes = await fetch(`${B}/api/batch/${badBatch.jobId}/retry`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({index: 0})});
+    const retryStarted = await retryRes.json().catch(() => ({}));
+    ok(retryRes.status === 202 && retryStarted.running === true, '单条重试返回 202 并重新进入队列');
+    const retryDone = await waitBatchDone(badBatch.jobId);
+    ok(retryDone?.records?.[0]?.status === 'qc-failed', '单条重试后仍写回原记录位置');
 
     // 渲染集成测试：本地设 BROWSER_EXECUTABLE，或 CI 设 RUN_RENDER_TESTS=1
     // （配合 `remotion browser ensure` 安装的无头浏览器）即可开启，绝不静默跳过渲染回归。

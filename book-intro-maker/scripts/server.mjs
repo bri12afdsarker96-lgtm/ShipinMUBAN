@@ -5,6 +5,7 @@
 //   - POST /api/render  渲染当前配置为 MP4，返回可播放链接（复用 render-core）。
 //   - GET  /api/renders 列出已渲染产物。
 //   - GET  /api/assets  返回素材库清单。
+//   - POST /api/batch/:id/pause|resume|retry  控制批量队列。
 //   - GET  /api/health  探活。
 //
 // 用法：npm run gui:build && node scripts/server.mjs   然后打开 http://127.0.0.1:4000
@@ -23,7 +24,7 @@ import {resolveBookCover} from './lib/covers.mjs';
 
 const root = process.cwd();
 const assets = loadAssets(path.join(process.cwd(), 'config', 'assets.example.json'));
-// 内存批量队列：jobId -> {jobId, total, records[], running, error}
+// 内存批量队列：jobId -> {jobId, total, records[], rows[], running, paused, error}
 const batchJobs = new Map();
 const PORT = Number(process.env.PORT) || 4000;
 const browserExecutable = process.env.BROWSER_EXECUTABLE || undefined;
@@ -185,6 +186,114 @@ const handleRenders = async (res) => {
 const relUrl = (output) => (output ? `/${output.split(path.sep).join('/')}` : undefined);
 
 const MAX_BATCH_JOBS = 50; // 内存队列容量上限，超出淘汰最旧任务
+const RETRYABLE_STATUSES = new Set(['failed', 'qc-failed']);
+
+const summarizeRecords = (records) =>
+  records.filter(Boolean).reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, {});
+
+const publicBatchState = (state) => ({
+  ok: true,
+  jobId: state.jobId,
+  total: state.total,
+  records: state.records,
+  running: state.running,
+  paused: state.paused,
+  status: state.status,
+  createdAt: state.createdAt,
+  summary: state.summary,
+  error: state.error,
+  waitingIndex: state.waitingIndex,
+  retrying: [...state.retrying],
+});
+
+const archiveBatchState = async (state) => {
+  const records = state.records.filter(Boolean);
+  const summary = state.summary || summarizeRecords(records);
+  await mkdir(state.outDir, {recursive: true});
+  await writeFile(
+    path.join(state.outDir, 'manifest.json'),
+    `${JSON.stringify({jobId: state.jobId, total: state.total, createdAt: state.createdAt, status: state.status, summary, records}, null, 2)}\n`,
+    'utf8',
+  );
+};
+
+const releasePauseWaiters = (state) => {
+  const waiters = state.pauseWaiters.splice(0);
+  for (const resolve of waiters) resolve();
+};
+
+const waitIfPaused = async (state, base) => {
+  if (!state.paused) return;
+  state.status = 'paused';
+  state.waitingIndex = base.index;
+  state.records[base.index] = {...(state.records[base.index] || {}), ...base, status: 'paused'};
+  await new Promise((resolve) => state.pauseWaiters.push(resolve));
+  if (state.waitingIndex === base.index) state.waitingIndex = null;
+};
+
+const setBatchProgress = (state, progress) => {
+  state.records[progress.index] = {...progress, url: relUrl(progress.output)};
+};
+
+const finishBatchRun = async (state, label) => {
+  state.running = false;
+  state.paused = false;
+  state.status = 'completed';
+  state.waitingIndex = null;
+  state.summary = summarizeRecords(state.records);
+  releasePauseWaiters(state);
+  try {
+    await archiveBatchState(state);
+  } catch (error) {
+    console.warn(`[batch] ${state.jobId} 归档失败：${error.message}`);
+  }
+  console.log(`[batch] ${state.jobId} ${label}完成 ${JSON.stringify(state.summary)}`);
+};
+
+const failBatchRun = async (state, error, label) => {
+  state.running = false;
+  state.paused = false;
+  state.status = 'failed';
+  state.waitingIndex = null;
+  state.error = error.message;
+  state.summary = summarizeRecords(state.records);
+  releasePauseWaiters(state);
+  try {
+    await archiveBatchState(state);
+  } catch (archiveError) {
+    console.warn(`[batch] ${state.jobId} 归档失败：${archiveError.message}`);
+  }
+  console.error(`[batch] ${state.jobId} ${label}出错：${error.message}`);
+};
+
+const startBatchRun = (state, {rows, indexOffset = 0, retryIndex = null}) => {
+  state.running = true;
+  state.status = retryIndex == null ? 'running' : 'retrying';
+  state.error = undefined;
+  runBatch({
+    rows,
+    root,
+    assets,
+    browserExecutable,
+    concurrency: state.concurrency,
+    retries: state.retries,
+    outDir: state.outDir,
+    indexOffset,
+    beforeItem: (base) => waitIfPaused(state, base),
+    onProgress: (p) => setBatchProgress(state, p),
+  })
+    .then(async () => {
+      if (retryIndex != null) state.retrying.delete(retryIndex);
+      await finishBatchRun(state, retryIndex == null ? '' : `重试第 ${retryIndex + 1} 条`);
+    })
+    .catch(async (error) => {
+      if (retryIndex != null) state.retrying.delete(retryIndex);
+      await failBatchRun(state, error, retryIndex == null ? '' : `重试第 ${retryIndex + 1} 条`);
+    });
+};
 
 const handleBatchStart = async (req, res) => {
   const body = await readJson(req);
@@ -193,60 +302,92 @@ const handleBatchStart = async (req, res) => {
 
   const jobId = `batch-${Date.now()}-${uniqueSuffix()}`;
   const outDir = path.join(editorOutDir, jobId);
-  const state = {jobId, total: videos.length, records: new Array(videos.length).fill(null), running: true, createdAt: new Date().toISOString()};
+  const state = {
+    jobId,
+    total: videos.length,
+    rows: videos,
+    records: new Array(videos.length).fill(null),
+    running: true,
+    paused: false,
+    status: 'running',
+    createdAt: new Date().toISOString(),
+    outDir,
+    concurrency: Number(body.concurrency) || 1,
+    retries: 1,
+    waitingIndex: null,
+    pauseWaiters: [],
+    retrying: new Set(),
+  };
   if (batchJobs.size >= MAX_BATCH_JOBS) {
     batchJobs.delete(batchJobs.keys().next().value); // Map 保插入序，删最旧
   }
   batchJobs.set(jobId, state);
 
   console.log(`[batch] ${jobId} 启动，共 ${videos.length} 条`);
-  runBatch({
-    rows: videos,
-    root,
-    assets,
-    browserExecutable,
-    concurrency: Number(body.concurrency) || 1,
-    retries: 1,
-    outDir,
-    onProgress: (p) => {
-      state.records[p.index] = {...p, url: relUrl(p.output)};
-    },
-  })
-    .then(async (records) => {
-      state.running = false;
-      const summary = records.reduce((acc, r) => {
-        acc[r.status] = (acc[r.status] || 0) + 1;
-        return acc;
-      }, {});
-      state.summary = summary;
-      try {
-        await mkdir(outDir, {recursive: true});
-        await writeFile(path.join(outDir, 'manifest.json'), `${JSON.stringify({jobId, total: videos.length, createdAt: state.createdAt, summary, records}, null, 2)}\n`, 'utf8');
-      } catch (error) {
-        console.warn(`[batch] ${jobId} 归档失败：${error.message}`);
-      }
-      console.log(`[batch] ${jobId} 完成 ${JSON.stringify(summary)}`);
-    })
-    .catch((error) => {
-      state.running = false;
-      state.error = error.message;
-      console.error(`[batch] ${jobId} 出错：${error.message}`);
-    });
+  startBatchRun(state, {rows: videos});
 
-  return sendJson(res, 200, {ok: true, jobId, total: videos.length});
+  return sendJson(res, 200, publicBatchState(state));
 };
 
 const handleBatchStatus = (res, jobId) => {
   const state = batchJobs.get(jobId);
   if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
-  return sendJson(res, 200, state);
+  return sendJson(res, 200, publicBatchState(state));
+};
+
+const handleBatchPause = (res, jobId) => {
+  const state = batchJobs.get(jobId);
+  if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
+  if (!state.running) return sendJson(res, 409, {ok: false, error: '任务已结束，不能暂停'});
+  state.paused = true;
+  state.status = 'paused';
+  return sendJson(res, 200, publicBatchState(state));
+};
+
+const handleBatchResume = (res, jobId) => {
+  const state = batchJobs.get(jobId);
+  if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
+  if (!state.running) return sendJson(res, 409, {ok: false, error: '任务已结束，不能恢复'});
+  state.paused = false;
+  state.status = state.retrying.size > 0 ? 'retrying' : 'running';
+  releasePauseWaiters(state);
+  return sendJson(res, 200, publicBatchState(state));
+};
+
+const handleBatchRetry = async (req, res, jobId) => {
+  const state = batchJobs.get(jobId);
+  if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
+  const body = await readJson(req);
+  const index = Number(body.index);
+  if (!Number.isInteger(index) || index < 0 || index >= state.total) {
+    return sendJson(res, 400, {ok: false, error: '重试序号无效'});
+  }
+  if (state.running) {
+    return sendJson(res, 409, {ok: false, error: '当前队列仍在运行，请结束后再重试单条'});
+  }
+  const current = state.records[index];
+  if (!current) return sendJson(res, 404, {ok: false, error: '该条记录尚不存在'});
+  if (!RETRYABLE_STATUSES.has(current.status)) {
+    return sendJson(res, 409, {ok: false, error: '只有失败或质检未过的条目可以重试'});
+  }
+  state.retrying.add(index);
+  state.records[index] = {
+    ...current,
+    status: 'queued',
+    error: undefined,
+    retriedAt: new Date().toISOString(),
+    previousStatus: current.status,
+    previousError: current.error,
+  };
+  startBatchRun(state, {rows: [state.rows[index]], indexOffset: index, retryIndex: index});
+  return sendJson(res, 202, publicBatchState(state));
 };
 
 // 批量历史：优先内存态，补充磁盘归档（服务重启后仍可见）。
 const handleBatchesList = async (res) => {
   const seen = new Map();
   for (const [jobId, s] of batchJobs) {
-    seen.set(jobId, {jobId, total: s.total, running: s.running, summary: s.summary, createdAt: s.createdAt});
+    seen.set(jobId, {jobId, total: s.total, running: s.running, paused: s.paused, status: s.status, summary: s.summary, createdAt: s.createdAt});
   }
   if (existsSync(editorOutDir)) {
     const dirs = (await readdir(editorOutDir, {withFileTypes: true})).filter((d) => d.isDirectory() && d.name.startsWith('batch-'));
@@ -256,7 +397,7 @@ const handleBatchesList = async (res) => {
       if (existsSync(mf)) {
         try {
           const m = JSON.parse(await readFile(mf, 'utf8'));
-          seen.set(d.name, {jobId: m.jobId, total: m.total, running: false, summary: m.summary, createdAt: m.createdAt});
+          seen.set(d.name, {jobId: m.jobId, total: m.total, running: false, paused: false, status: m.status || 'completed', summary: m.summary, createdAt: m.createdAt});
         } catch {
           /* 跳过损坏的归档 */
         }
@@ -418,7 +559,17 @@ const server = createServer(async (req, res) => {
     if (url === '/api/render' && req.method === 'POST') return await handleRender(req, res);
     if (url === '/api/batches') return await handleBatchesList(res);
     if (url === '/api/batch' && req.method === 'POST') return await handleBatchStart(req, res);
-    if (url.startsWith('/api/batch/')) return handleBatchStatus(res, url.slice('/api/batch/'.length).split('?')[0]);
+    if (url.startsWith('/api/batch/')) {
+      const [jobId, action] = url
+        .slice('/api/batch/'.length)
+        .split('?')[0]
+        .split('/')
+        .map((part) => decodeURIComponent(part));
+      if (!action && req.method === 'GET') return handleBatchStatus(res, jobId);
+      if (action === 'pause' && req.method === 'POST') return handleBatchPause(res, jobId);
+      if (action === 'resume' && req.method === 'POST') return handleBatchResume(res, jobId);
+      if (action === 'retry' && req.method === 'POST') return await handleBatchRetry(req, res, jobId);
+    }
 
     const filePath = resolveStatic(url);
     if (!filePath) {

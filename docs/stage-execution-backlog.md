@@ -14,7 +14,8 @@
 
 ## 当前执行阶段
 
-当前正式立项的执行阶段是 **阶段 3E：合并前验收**。
+当前正式立项的执行阶段是 **阶段 3E：合并前验收**；在 3E 被 GitHub Billing 与第三方封面源阻断期间，
+同步推进不依赖外部账号状态的阶段四产品化小步快跑。
 
 阶段 3E 不以新增大功能为主，而是把已经完成的阶段二、阶段三能力跑通、验明、归档，确认 PR #2 可以从 draft 推进到 ready for review。
 
@@ -25,7 +26,7 @@
 | 3E | 进行中 | 合并前验收 | CI 真跑绿；真实素材验收有记录；PR #2 可转 ready |
 | 4A | 进行中，第一版完成 | 素材管理产品化 | 界面内选择/上传封面、音乐、背景、开场视频，无需手写路径 |
 | 4B | 进行中，封面与卡点第一版完成 | 封面与卡点一键化 | 界面内触发封面查询、自动卡点，并能预览结果 |
-| 4C | 待立项 | 队列控制 | 支持暂停、恢复、单条重试、失败原因展示 |
+| 4C | 第一版完成 | 队列控制 | 支持暂停、恢复、单条重试、失败原因展示 |
 | 4D | 待立项 | 视觉验收 | 自动导出关键帧截图，便于人工检查遮挡、错位、字幕溢出 |
 | 5A | 待立项 | 桌面封装选型 | Electron / Tauri 做出可运行原型，确认 Windows 可启动 |
 | 5B | 待立项 | 分发包与示例工程 | 非开发机器可安装，示例工程可打开、预览、渲染 |
@@ -154,7 +155,7 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 | 服务端 | 新增 `POST /api/beats/detect`，复用 WAV 解码与瞬态检测 |
 | 编辑器 | 背景音乐下新增快闪切点帧输入框和自动卡点按钮 |
 | 配置输出 | 自动卡点结果写入 `books.flashCutFrames` |
-| 阶段状态 | 4B 卡点第一版完成；封面查询按钮仍待后续处理 |
+| 阶段状态 | 4B 卡点第一版完成；封面查询能力见 4B 第二版 |
 
 验证结果：
 
@@ -178,3 +179,21 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 - `npm.cmd run covers -- --force` 使用公共模块后仍保持降级链路正常。
 - `POST /api/covers/lookup` 对 `The Great Gatsby` 返回 `coverSource=placeholder`、3 条 warning，服务继续存活。
 - `npm.cmd test` 通过 6 项，未设浏览器时渲染集成项按既有规则跳过。
+
+## 4C 第一版：批量队列控制
+
+| 项目 | 结果 |
+| --- | --- |
+| 批量核心 | `runBatch` 新增暂停等待点与 `indexOffset`，单条重试可写回原行号 |
+| 服务端 | 新增 `POST /api/batch/:id/pause`、`resume`、`retry`，队列状态返回 `paused/status/retrying/waitingIndex` |
+| 编辑器 | 批量队列页新增暂停、恢复、单条重试按钮，并单独展示失败原因 |
+| 归档 | `manifest.json` 增加队列 `status`，重试后仍按整批 records 归档 |
+| 阶段状态 | 4C 第一版完成；当前暂停为“当前条跑完后暂停下一条”，不强杀正在渲染的 MP4 |
+
+验证结果：
+
+- `node --check` 通过：`scripts/batch/lib/run-batch.mjs`、`scripts/server.mjs`、`scripts/test-regressions.mjs`。
+- `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run gui:build` 通过。
+- `npm.cmd test` 通过 12 项，新增覆盖队列等待点、失败原因返回、单条重试写回原记录。
+- 接口冒烟：启动 2 条质检失败任务后，`pause` 返回 `paused=true/status=paused`，`resume` 返回 `paused=false`，最终两条均为 `qc-failed` 且失败原因均为“主书标题为空”。
