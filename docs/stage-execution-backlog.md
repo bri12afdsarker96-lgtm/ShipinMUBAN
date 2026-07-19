@@ -107,6 +107,10 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 | 批量 dry-run | 示例批量数据 3 条全部 `qc-passed` |
 | 综合状态 | `passed-with-followups` |
 
+封面链路已补充代理回退诊断：当前 Windows 用户代理为 `127.0.0.1:18483`，Node 直连会超时；
+脚本现在可通过 curl 走 `COVER_PROXY` / 系统用户代理。重跑后失败原因变为 Open Library 封面图
+`503` 或超时、Google Books `429`，说明脚本代理链路已打通，但第三方封面源在当前网络出口下仍不可用。
+
 已完成 3E-5 真实 MP4 渲染验收：
 
 | 验收项 | 结果 |

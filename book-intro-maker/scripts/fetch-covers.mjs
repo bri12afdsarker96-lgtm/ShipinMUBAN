@@ -13,8 +13,11 @@
 //   node scripts/fetch-covers.mjs            正常运行（利用缓存）
 //   node scripts/fetch-covers.mjs --force    忽略缓存，强制重新下载
 
-import {access, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {access, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {constants} from 'node:fs';
+import {spawn, spawnSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {coverSlug as slug} from './lib/cover-path.mjs';
@@ -27,6 +30,7 @@ const outputPath = path.join(root, 'config', 'books.resolved.json');
 const FORCE = process.argv.includes('--force');
 const TIMEOUT_MS = 12000;
 const MIN_IMAGE_BYTES = 1024; // 小于该阈值大概率是空白/占位图，视为无效。
+const USER_AGENT = 'ShipinMUBAN/0.2 (+cover-fetch)';
 
 const fileExists = async (filePath) => {
   try {
@@ -37,15 +41,133 @@ const fileExists = async (filePath) => {
   }
 };
 
+let cachedProxy = undefined;
+let announcedProxy = false;
+
+const normalizeProxy = (value) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return null;
+  return /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+};
+
+const parseProxyServer = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!raw.includes(';')) return normalizeProxy(raw);
+
+  const entries = raw.split(';').map((item) => item.trim()).filter(Boolean);
+  const preferred = entries.find((item) => item.toLowerCase().startsWith('https=')) || entries.find((item) => item.toLowerCase().startsWith('http=')) || entries[0];
+  return normalizeProxy(preferred.includes('=') ? preferred.split('=').slice(1).join('=') : preferred);
+};
+
+const readWindowsUserProxy = () => {
+  if (process.platform !== 'win32') return null;
+  const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+  try {
+    const enabled = spawnSync('reg', ['query', key, '/v', 'ProxyEnable'], {encoding: 'utf8'});
+    if (enabled.status !== 0 || !/ProxyEnable\s+REG_DWORD\s+0x1/i.test(enabled.stdout)) {
+      return null;
+    }
+    const server = spawnSync('reg', ['query', key, '/v', 'ProxyServer'], {encoding: 'utf8'});
+    if (server.status !== 0) return null;
+    const match = server.stdout.match(/ProxyServer\s+REG_\w+\s+(.+)/i);
+    return parseProxyServer(match?.[1]);
+  } catch {
+    return null;
+  }
+};
+
+const displayProxy = (proxy) => {
+  try {
+    const url = new URL(proxy);
+    if (url.username) url.username = '***';
+    if (url.password) url.password = '***';
+    return url.toString();
+  } catch {
+    return proxy;
+  }
+};
+
+const proxyForCurl = () => {
+  if (cachedProxy !== undefined) return cachedProxy;
+  cachedProxy =
+    normalizeProxy(process.env.COVER_PROXY) ||
+    normalizeProxy(process.env.HTTPS_PROXY) ||
+    normalizeProxy(process.env.HTTP_PROXY) ||
+    normalizeProxy(process.env.ALL_PROXY) ||
+    readWindowsUserProxy();
+  return cachedProxy;
+};
+
+const spawnFileBuffer = (command, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, {windowsHide: true});
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => resolve({code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr)}));
+  });
+
+const responseFromBuffer = ({status, buffer}) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  statusText: 'curl',
+  arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  json: async () => JSON.parse(buffer.toString('utf8')),
+});
+
+const fetchWithCurl = async (url, init = {}) => {
+  const proxy = proxyForCurl();
+  const tempFile = path.join(tmpdir(), `shipin-cover-${randomUUID()}`);
+  const headers = {'user-agent': USER_AGENT, ...(init.headers || {})};
+  const args = ['-L', '--silent', '--show-error', '--max-time', String(Math.ceil(TIMEOUT_MS / 1000)), '-o', tempFile, '-w', '%{http_code}'];
+
+  for (const [key, value] of Object.entries(headers)) {
+    args.push('-H', `${key}: ${value}`);
+  }
+  if (proxy) {
+    if (!announcedProxy) {
+      console.log(`[cover] 使用代理回退：${displayProxy(proxy)}`);
+      announcedProxy = true;
+    }
+    args.push('--proxy', proxy);
+  }
+  args.push(url);
+
+  const command = process.platform === 'win32' ? 'curl.exe' : 'curl';
+  const result = await spawnFileBuffer(command, args);
+  const status = Number(result.stdout.toString('utf8').trim().match(/(\d{3})$/)?.[1] || 0);
+  const buffer = await readFile(tempFile).catch(() => Buffer.alloc(0));
+  await rm(tempFile, {force: true}).catch(() => {});
+
+  if (result.code !== 0) {
+    const detail = result.stderr.toString('utf8').trim() || `HTTP ${status || '000'}`;
+    throw new Error(`curl 失败: ${detail}`);
+  }
+  return responseFromBuffer({status, buffer});
+};
+
 const fetchWithTimeout = async (url, init = {}) => {
+  if (proxyForCurl()) {
+    return fetchWithCurl(url, init);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     return await fetch(url, {
       ...init,
       signal: controller.signal,
-      headers: {'user-agent': 'ShipinMUBAN/0.2 (+cover-fetch)', ...(init.headers || {})},
+      headers: {'user-agent': USER_AGENT, ...(init.headers || {})},
     });
+  } catch (error) {
+    try {
+      return await fetchWithCurl(url, init);
+    } catch {
+      throw error;
+    }
   } finally {
     clearTimeout(timer);
   }

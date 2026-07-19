@@ -48,6 +48,10 @@
 5. Google Books 作为补充。
 6. 找不到封面时使用生成式占位封面，并在日志里标记。
 
+脚本补充了代理回退：当 Windows 用户代理开启，或设置了 `COVER_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY`
+时，`scripts/fetch-covers.mjs` 会用 curl 走代理下载。当前验收环境已确认代理链路可用，但真实封面仍未
+闭环：Open Library 封面图返回 `503` 或超时，Google Books 返回 `429`，所以继续降级为 placeholder。
+
 ## 验收标准
 
 - 修改配置即可更换快闪书单和主书。

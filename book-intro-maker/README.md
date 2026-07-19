@@ -50,6 +50,9 @@ node scripts/fetch-covers.mjs --force   # 忽略缓存强制重新下载
 - 输出解析后配置 `config/books.resolved.json`（同样不进仓库）。
 - 模板按「约定路径 + 加载失败降级」接入封面：`public/covers/<slug>.jpg`（slug 与脚本一致），
   文件不存在时 `CoverImage` 自动回退到生成式图形封面，**缺封面/缺网络都不会中断渲染**。
+- 如果 Windows 开启了用户代理，脚本会在 Node 直连不可用时通过 curl 走该代理；也可显式设置
+  `COVER_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY`。当前验收环境中，代理可用但 Open Library 封面图
+  返回 `503` 或超时，Google Books 返回 `429`，因此仍降级为 placeholder。
 
 ## 运行
 

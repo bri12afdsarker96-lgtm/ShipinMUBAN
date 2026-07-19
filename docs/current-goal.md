@@ -47,6 +47,7 @@
 | 阶段 3E 验收入口 | 已完成 | 新增 `npm run acceptance:3e` |
 | 阶段 3E 本地验收 | 已完成 | 状态 `passed-with-followups`：封面真实下载待复测，自动卡点和批量 dry-run 通过 |
 | 阶段 3E 真实 MP4 验收 | 已完成 | 1 条视频 rendered，720x1280，约 8.43 秒，约 1.57MB，抽帧非黑屏 |
+| 真实封面代理诊断 | 已完成，第三方源待复测 | 脚本已支持 curl 走系统代理；当前 Open Library 为 `503`/超时，Google Books 为 `429` |
 
 ## 合并前目标
 
@@ -91,3 +92,6 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
 - 2026-07-19：开启自动模式后执行 `RUN_ACCEPTANCE_RENDER=1 npm.cmd run acceptance:3e`。结果：
   `classics-night` 真实 MP4 渲染成功，720x1280，约 8.43 秒，约 1.57MB；5.5 秒抽帧非黑屏，
   缺真实封面时显示生成式封面。阶段 3E 剩余阻断仍是真实封面下载和 GitHub Billing / CI。
+- 2026-07-19：诊断真实封面下载。结论：Windows 用户代理为 `127.0.0.1:18483`，PowerShell 可走代理，
+  Node 直连超时；已让 `scripts/fetch-covers.mjs` 支持 curl 代理回退。重跑后脚本能走代理，但当前
+  Open Library 封面图返回 `503` 或超时，Google Books 返回 `429`，真实封面仍需换网络出口或稍后复测。
