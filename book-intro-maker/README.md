@@ -123,7 +123,11 @@ npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1
 npm.cmd test        # 覆盖三类回归：批量 id 越界/覆盖、books 非对象降级、大请求体 413
 ```
 
-id 清理与 413 无需浏览器；books 降级与批量渲染断言需设 `BROWSER_EXECUTABLE`（或本机 Chrome）。
+id 清理与 413 无需浏览器；books 降级与批量渲染断言需设 `BROWSER_EXECUTABLE`（或本机 Chrome），
+或设 `RUN_RENDER_TESTS=1` 让 Remotion 使用已安装的无头浏览器。
+
+仓库配 GitHub Actions（`../.github/workflows/ci.yml`）：PR/push 时安装无头浏览器（`remotion browser
+ensure`）并跑 `tsc` + **完整 11 项回归**（`RUN_RENDER_TESTS=1`），确保渲染回归不会被静默跳过而假绿。
 
 ## 设计说明
 

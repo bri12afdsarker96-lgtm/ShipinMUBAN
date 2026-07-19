@@ -63,7 +63,8 @@ a3476f4 阶段三：编辑器本地服务版
 - 定义全部配置类型：`IntroConfig` / `BookRef` / `MainBookRef` / `BooksConfig` /
   `SubtitleItem` / `SubtitleStyle` / `SubtitlesConfig`，及 `Motif` / `Palette`。
 - 解析器 `parseIntroConfig` / `parseBooksConfig` / `parseSubtitlesConfig`：**容错优先**——
-  字段缺失或类型不对时 `console.warn` 并回退默认值，只有结构性损坏（books 非对象）才抛错。
+  字段缺失或类型不对时 `console.warn` 并回退默认值，均不抛错（`books` 非对象亦回退空书单 + 占位主书，
+  见 §6b 修复）。
 - `paletteForIndex` / `motifForIndex`：为无配色/图形的书按序分配默认视觉，保证占位封面有区分度。
 - 关键取舍：不引入 zod，用手写守卫（`isObject`/`asString`/`asNumber`…）保持零依赖，离线可用。
 

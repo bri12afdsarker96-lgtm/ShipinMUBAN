@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'claude/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: book-intro-maker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: book-intro-maker/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 安装渲染用无头浏览器（chrome-headless-shell）。
+      # 必须安装，否则 npm test 会跳过 books 降级与批量渲染回归、却仍显示绿色。
+      - name: 安装无头浏览器
+        run: npx remotion browser ensure
+
+      - name: 类型检查
+        run: npx tsc --noEmit
+
+      # RUN_RENDER_TESTS=1 强制运行完整 11 项回归（含浏览器渲染的 books / 批量 id 集成测试）。
+      # 不传 BROWSER_EXECUTABLE，让 Remotion 使用上一步安装的无头浏览器。
+      - name: 回归测试（完整 11 项，含渲染）
+        run: npm test
+        env:
+          RUN_RENDER_TESTS: '1'

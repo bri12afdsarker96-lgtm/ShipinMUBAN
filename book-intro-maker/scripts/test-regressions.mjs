@@ -67,7 +67,9 @@ try {
     ok((await fetch(`${B}/api/health`)).ok, '413 后服务存活');
     ok((await fetch(`${B}/api/health`)).ok, '413 后可再次请求（连接未脏）');
 
-    if (process.env.BROWSER_EXECUTABLE) {
+    // 渲染集成测试：本地设 BROWSER_EXECUTABLE，或 CI 设 RUN_RENDER_TESTS=1
+    // （配合 `remotion browser ensure` 安装的无头浏览器）即可开启，绝不静默跳过渲染回归。
+    if (process.env.BROWSER_EXECUTABLE || process.env.RUN_RENDER_TESTS === '1') {
       // —— 集成：books 非对象降级（需渲染）——
       console.log('集成：books 非对象 -> 降级出片，服务不崩');
       const rb = await fetch(`${B}/api/render`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({books: 'bad'})});
@@ -105,7 +107,7 @@ try {
       ok(urls.some((u) => u.endsWith('escape-0.mp4')), "越界 id '..\\\\escape' -> escape-0.mp4");
       ok(urls.filter((u) => /dup-\d+\.mp4$/.test(u)).length === 2, '同名 id 不覆盖（dup-1 / dup-2）');
     } else {
-      console.log('（未设 BROWSER_EXECUTABLE，跳过需渲染的 books / 批量 id 集成测试）');
+      console.log('（未设 BROWSER_EXECUTABLE / RUN_RENDER_TESTS，跳过需渲染的 books / 批量 id 集成测试）');
     }
   }
 } finally {
