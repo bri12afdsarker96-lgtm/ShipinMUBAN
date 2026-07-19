@@ -19,11 +19,13 @@
 
 ## 本轮任务目标
 
-本轮不继续堆新功能，先把“能稳定交付”的边界打牢。
+本轮将后续阶段正式立项，并从 **阶段 3E：合并前验收** 开始执行。阶段立项与执行台账见
+`docs/stage-execution-backlog.md`。
 
 1. 明确当前目标和验收边界，避免项目状态只停留在口头复盘。
-2. 执行不依赖 GitHub Billing 的验收任务，优先复核真实封面查询链路。
-3. 把验收结果写回文档，形成下一轮可继续执行的任务清单。
+2. 建立不依赖 GitHub Billing 的本地验收入口。
+3. 执行真实封面查询、自动卡点、批量 dry-run 的合并前验收。
+4. 把验收结果写回文档，形成下一轮可继续执行的任务清单。
 
 ## 阶段提交规则
 
@@ -41,6 +43,9 @@
 | 明确当前目标与验收边界 | 已完成 | 新增本文档，并更新根 README 的当前状态 |
 | 真实封面查询 smoke test | 已完成 | 当前环境 Open Library / Google Books 均 `fetch failed`，4 本书全部降级 placeholder |
 | 阶段成果推送到 GitHub | 已完成 | 本阶段文档已推送到 PR #2 分支，并已通过远端内容回读确认 |
+| 后续阶段立项 | 已完成 | 新增 `docs/stage-execution-backlog.md` |
+| 阶段 3E 验收入口 | 已完成 | 新增 `npm run acceptance:3e` |
+| 阶段 3E 本地验收 | 已完成 | 状态 `passed-with-followups`：封面真实下载待复测，自动卡点和批量 dry-run 通过 |
 
 ## 合并前目标
 
@@ -78,3 +83,7 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
   但真实封面下载仍未在当前网络环境闭环。
 - 2026-07-19：本地 `git push` 因 GitHub 443 连接失败未完成，改用 GitHub Git Data API 将本阶段
   文档成果推送到 `claude/shipinmubam-handoff-avn529`，并通过远端内容回读确认。
+- 2026-07-19：将后续阶段正式立项，当前执行阶段定为 3E 合并前验收；新增阶段执行台账与本地
+  验收脚本入口。
+- 2026-07-19：执行 `npm.cmd run acceptance:3e`。结果：真实封面查询 4 本均降级 placeholder；
+  示例音频生成 14 个切点；示例批量数据 3 条全部 `qc-passed`；综合状态为 `passed-with-followups`。

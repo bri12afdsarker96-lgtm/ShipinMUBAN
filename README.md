@@ -30,6 +30,7 @@ Remotion 脚本已经显式指定本机 Chrome 路径，避免首次渲染时卡
 - `docs/phase-3-plan.md`：三阶段产品化规划。
 - `docs/current-goal.md`：当前进行中的目标、验收边界和下一阶段任务。
 - `docs/project-review-and-stage-roadmap.md`：全项目复盘与每个阶段的目标规划。
+- `docs/stage-execution-backlog.md`：后续阶段立项、阶段闸门和执行台账。
 - `docs/claude-code-task.md`：交给 Claude Code 的初步开发任务。
 - `CLAUDE.md`：Claude Code 项目工作说明。
 

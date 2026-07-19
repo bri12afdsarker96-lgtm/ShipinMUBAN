@@ -9,6 +9,7 @@
     "covers": "node scripts/fetch-covers.mjs",
     "beats": "node scripts/detect-beats.mjs",
     "batch": "node scripts/batch/render-batch.mjs",
+    "acceptance:3e": "node scripts/acceptance-3e.mjs",
     "gui": "node scripts/build-gui.mjs --serve",
     "gui:build": "node scripts/build-gui.mjs",
     "server": "node scripts/server.mjs",
