@@ -68,14 +68,24 @@ const safeSlug = (value) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'editor';
 
-// —— 静态文件：依次在 dist / public / out 目录查找 ——
+// —— 静态文件：在 dist / public / out 目录查找，并校验不越出目录边界（防路径遍历）——
+const withinBase = (base, target) => {
+  const resolved = path.resolve(target);
+  return resolved === base || resolved.startsWith(base + path.sep) ? resolved : null;
+};
+
 const resolveStatic = (urlPath) => {
   const clean = decodeURIComponent(urlPath.split('?')[0]).replace(/^\/+/, '');
-  if (clean === '' ) return path.join(distDir, 'index.html');
-  if (clean.startsWith('out/')) return path.join(root, clean);
-  for (const base of [distDir, publicDir]) {
-    const p = path.join(base, clean);
-    if (p.startsWith(base) && existsSync(p)) return p;
+  if (clean === '') return path.join(distDir, 'index.html');
+  const candidates = clean.startsWith('out/')
+    ? [[outDir, path.join(root, clean)]]
+    : [
+        [distDir, path.join(distDir, clean)],
+        [publicDir, path.join(publicDir, clean)],
+      ];
+  for (const [base, target] of candidates) {
+    const safe = withinBase(base, target);
+    if (safe && existsSync(safe)) return safe;
   }
   return null;
 };
@@ -147,7 +157,7 @@ const handleBatchStart = async (req, res) => {
 
   const jobId = `batch-${Date.now()}`;
   const outDir = path.join(editorOutDir, jobId);
-  const state = {jobId, total: videos.length, records: new Array(videos.length).fill(null), running: true};
+  const state = {jobId, total: videos.length, records: new Array(videos.length).fill(null), running: true, createdAt: new Date().toISOString()};
   batchJobs.set(jobId, state);
 
   console.log(`[batch] ${jobId} 启动，共 ${videos.length} 条`);
@@ -163,9 +173,20 @@ const handleBatchStart = async (req, res) => {
       state.records[p.index] = {...p, url: relUrl(p.output)};
     },
   })
-    .then(() => {
+    .then(async (records) => {
       state.running = false;
-      console.log(`[batch] ${jobId} 完成`);
+      const summary = records.reduce((acc, r) => {
+        acc[r.status] = (acc[r.status] || 0) + 1;
+        return acc;
+      }, {});
+      state.summary = summary;
+      try {
+        await mkdir(outDir, {recursive: true});
+        await writeFile(path.join(outDir, 'manifest.json'), `${JSON.stringify({jobId, total: videos.length, createdAt: state.createdAt, summary, records}, null, 2)}\n`, 'utf8');
+      } catch (error) {
+        console.warn(`[batch] ${jobId} 归档失败：${error.message}`);
+      }
+      console.log(`[batch] ${jobId} 完成 ${JSON.stringify(summary)}`);
     })
     .catch((error) => {
       state.running = false;
@@ -180,6 +201,31 @@ const handleBatchStatus = (res, jobId) => {
   const state = batchJobs.get(jobId);
   if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
   return sendJson(res, 200, state);
+};
+
+// 批量历史：优先内存态，补充磁盘归档（服务重启后仍可见）。
+const handleBatchesList = async (res) => {
+  const seen = new Map();
+  for (const [jobId, s] of batchJobs) {
+    seen.set(jobId, {jobId, total: s.total, running: s.running, summary: s.summary, createdAt: s.createdAt});
+  }
+  if (existsSync(editorOutDir)) {
+    const dirs = (await readdir(editorOutDir, {withFileTypes: true})).filter((d) => d.isDirectory() && d.name.startsWith('batch-'));
+    for (const d of dirs) {
+      if (seen.has(d.name)) continue;
+      const mf = path.join(editorOutDir, d.name, 'manifest.json');
+      if (existsSync(mf)) {
+        try {
+          const m = JSON.parse(await readFile(mf, 'utf8'));
+          seen.set(d.name, {jobId: m.jobId, total: m.total, running: false, summary: m.summary, createdAt: m.createdAt});
+        } catch {
+          /* 跳过损坏的归档 */
+        }
+      }
+    }
+  }
+  const batches = [...seen.values()].sort((a, b) => String(b.jobId).localeCompare(String(a.jobId)));
+  return sendJson(res, 200, {batches});
 };
 
 const handleAssets = async (res) => {
@@ -200,6 +246,7 @@ const server = createServer(async (req, res) => {
     if (url === '/api/assets') return handleAssets(res);
     if (url.startsWith('/api/renders')) return handleRenders(res);
     if (url === '/api/render' && req.method === 'POST') return handleRender(req, res);
+    if (url === '/api/batches') return handleBatchesList(res);
     if (url === '/api/batch' && req.method === 'POST') return handleBatchStart(req, res);
     if (url.startsWith('/api/batch/')) return handleBatchStatus(res, url.slice('/api/batch/'.length).split('?')[0]);
 

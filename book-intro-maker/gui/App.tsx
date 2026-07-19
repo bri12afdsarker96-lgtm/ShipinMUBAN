@@ -196,6 +196,16 @@ export const App: React.FC = () => {
   };
   const doneCount = batch.records.filter((r) => r && ['rendered', 'failed', 'qc-failed'].includes(r.status)).length;
 
+  // 批量历史（服务端归档，重启后仍可见）
+  const [batches, setBatches] = useState<{jobId: string; total?: number; summary?: Record<string, number>; running?: boolean; createdAt?: string}[]>([]);
+  useEffect(() => {
+    if (view !== 'batch' || !apiOk) return;
+    fetch('/api/batches')
+      .then((r) => r.json())
+      .then((d) => setBatches(d.batches || []))
+      .catch(() => undefined);
+  }, [view, apiOk, batch.running]);
+
   const batchView = (
     <div style={{padding: 24, width: '100%', maxWidth: 960, margin: '0 auto', boxSizing: 'border-box'}}>
       <h2 style={{fontSize: 17, margin: '0 0 6px'}}>批量渲染队列</h2>
@@ -239,6 +249,19 @@ export const App: React.FC = () => {
             ))}
           </tbody>
         </table>
+      ) : null}
+
+      {batches.length > 0 ? (
+        <div style={{marginTop: 28}}>
+          <h3 style={{fontSize: 14, margin: '0 0 8px', color: '#5b6472'}}>历史任务</h3>
+          {batches.map((b) => (
+            <div key={b.jobId} style={{display: 'flex', gap: 12, fontSize: 12, color: '#6b7480', padding: '5px 0', borderBottom: '1px solid #eef1f5'}}>
+              <span style={{fontFamily: 'ui-monospace, monospace'}}>{b.jobId}</span>
+              <span>{b.running ? '进行中…' : b.summary ? Object.entries(b.summary).map(([k, v]) => `${k}:${v}`).join('  ') : '—'}</span>
+              <span style={{color: '#9aa4b0', marginLeft: 'auto'}}>{b.createdAt ? b.createdAt.slice(0, 19).replace('T', ' ') : ''}</span>
+            </div>
+          ))}
+        </div>
       ) : null}
     </div>
   );
