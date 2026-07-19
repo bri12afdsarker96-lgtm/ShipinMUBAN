@@ -5,6 +5,7 @@
 Windows 桌面封装入口：
 
 ```powershell
+npm.cmd run electron:install
 npm.cmd run desktop
 ```
 
@@ -15,6 +16,7 @@ npm.cmd run dist:win
 ```
 
 安装包输出目录为 `release/`。如果本机尚未下载 Electron 运行时，需要先让 `node_modules/electron/dist/electron.exe` 下载完成。
+当前第一版安装包文件为 `release/水星视频模板-Setup-0.2.0.exe`。
 
 竖屏（720x1280 / 30fps）书籍类短视频模板生成器。阶段二起，模板由配置文件驱动，
 并接入真实书封查询与缓存。

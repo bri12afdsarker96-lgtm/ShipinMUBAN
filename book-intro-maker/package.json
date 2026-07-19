@@ -15,9 +15,10 @@
     "gui": "node scripts/build-gui.mjs --serve",
     "gui:build": "node scripts/build-gui.mjs",
     "server": "node scripts/server.mjs",
+    "electron:install": "node scripts/install-electron-cn.mjs",
     "desktop": "npm run gui:build && electron electron/main.cjs",
-    "pack:win": "npm run gui:build && electron-builder --win --dir",
-    "dist:win": "npm run gui:build && electron-builder --win nsis",
+    "pack:win": "node scripts/build-installer.mjs --win --dir",
+    "dist:win": "node scripts/build-installer.mjs --win nsis",
     "test": "node scripts/test-regressions.mjs"
   },
   "dependencies": {
@@ -52,6 +53,7 @@
       "node_modules/**/*"
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",

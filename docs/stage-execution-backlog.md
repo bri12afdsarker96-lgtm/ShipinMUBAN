@@ -28,7 +28,7 @@
 | 4B | 进行中，封面与卡点第一版完成 | 封面与卡点一键化 | 界面内触发封面查询、自动卡点，并能预览结果 |
 | 4C | 第一版完成 | 队列控制 | 支持暂停、恢复、单条重试、失败原因展示 |
 | 4D | 待立项 | 视觉验收 | 自动导出关键帧截图，便于人工检查遮挡、错位、字幕溢出 |
-| 5A | 第一版配置完成，安装包产出待 Electron 下载 | 桌面封装选型 | Electron 桌面壳 + NSIS 安装包配置，确认 Windows 可启动 |
+| 5A | 第一版完成 | 桌面封装选型 | 已生成 NSIS 引导安装包，目录版 Windows 客户端可启动 |
 | 5B | 待立项 | 分发包与示例工程 | 非开发机器可安装，示例工程可打开、预览、渲染 |
 
 ## 3E 任务包
@@ -235,10 +235,15 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 | 桌面壳 | 新增 Electron 主进程，启动时自动打开本地编辑器服务 |
 | 安装包 | 新增 `electron-builder` NSIS 引导式安装包配置，可选安装目录、创建桌面/开始菜单快捷方式 |
 | UI 风格 | 参考“水星下载”，改为深色左侧导航、右侧工作区、顶部主操作按钮 |
-| 阶段状态 | 代码与配置完成；安装包实物待 Electron 运行时下载成功后生成 |
+| 签名策略 | 第一版关闭 `signAndEditExecutable`，先产出未签名安装包，避免本机无符号链接权限时卡在 winCodeSign |
+| 阶段状态 | 第一版完成，已产出引导安装包 |
 
 验证结果：
 
 - `npm.cmd run gui:build` 通过。
 - `package-lock.json` 已记录 Electron / electron-builder 依赖。
-- 本机 `node_modules/electron/install.js` 下载 Electron 运行时多次超时，尚未得到 `node_modules/electron/dist/electron.exe`，因此 `npm.cmd run dist:win` 需要在网络恢复或配置镜像后执行。
+- `npm.cmd run electron:install` 通过镜像下载 Electron 运行时。
+- `npm.cmd run pack:win` 生成目录版客户端 `release/win-unpacked/水星视频模板.exe`。
+- `npm.cmd run dist:win` 生成引导安装包 `release/水星视频模板-Setup-0.2.0.exe`。
+- 安装包大小 134,887,754 bytes，SHA256 `8CC1FD4DF19053BB0FA2F369964D068F46FE7C5F0CFDACC8296AB60C1E8B6745`。
+- 目录版客户端启动验收通过，`http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`。

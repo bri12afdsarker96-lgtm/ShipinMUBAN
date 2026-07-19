@@ -19,11 +19,14 @@
 | 安装包 | 新增 `electron-builder` 的 NSIS 配置，输出名为 `水星视频模板-Setup-${version}.exe` |
 | UI 风格 | 编辑器外层改为水星下载参考风格：深蓝侧边栏、渐变标识、右侧工作区和顶部操作按钮 |
 | 图标资产 | 新增 `electron/assets/logo.svg` 作为水星系视觉标识源文件 |
+| 签名策略 | 第一版先关闭 `signAndEditExecutable`，产出未签名引导安装包；正式分发前再补证书签名 |
+| 下载镜像 | 新增 `scripts/install-electron-cn.mjs` 与 `scripts/build-installer.mjs`，打包时自动使用 Electron / electron-builder 镜像 |
 
 ## 运行命令
 
 ```powershell
 cd book-intro-maker
+npm.cmd run electron:install
 npm.cmd run gui:build
 npm.cmd run desktop
 ```
@@ -43,19 +46,21 @@ book-intro-maker/release/
 
 ## 当前验收边界
 
-当前代码侧已完成桌面壳与安装包配置，`npm.cmd run gui:build` 已通过。
+当前代码侧已完成桌面壳与安装包配置，`npm.cmd run dist:win` 已成功生成引导安装包。
 
-本机实际生成安装包仍需要 Electron 运行时下载成功。当前环境中 `node_modules/electron/install.js` 多次下载超时，未得到 `node_modules/electron/dist/electron.exe`，因此本轮不能诚实声称安装包已经实际产出。网络恢复或切换 Electron 镜像后，重新执行：
+安装包实物：
 
-```powershell
-cd book-intro-maker
-$env:npm_config_cache='D:\项目开发\MUBAN\.npm-cache'
-node node_modules\electron\install.js
-npm.cmd run dist:win
+```text
+book-intro-maker/release/水星视频模板-Setup-0.2.0.exe
 ```
+
+- 大小：134,887,754 bytes
+- SHA256：`8CC1FD4DF19053BB0FA2F369964D068F46FE7C5F0CFDACC8296AB60C1E8B6745`
+- 目录版客户端：`book-intro-maker/release/win-unpacked/水星视频模板.exe`
+- 目录版启动验收：客户端启动后 `http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`
 
 ## 下一步
 
-- 为安装包补 `.ico` 正式图标。
+- 为安装包补 `.ico` 正式图标与代码签名证书。
 - 将用户上传素材和渲染输出迁移到用户数据目录，避免安装目录权限影响。
-- 在真实 Windows 安装包产出后，执行安装、启动、渲染、卸载四项验收。
+- 执行安装、启动、渲染、卸载四项完整验收。
