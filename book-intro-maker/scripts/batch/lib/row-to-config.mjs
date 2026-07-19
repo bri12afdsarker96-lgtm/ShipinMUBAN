@@ -90,12 +90,14 @@ const buildBooks = (row) => {
     return row.books;
   }
   const flashBooks = parseFlashBooks(row.flashBooks);
-  const flashCutFrames = row.flashCutFrames
+  let flashCutFrames = row.flashCutFrames
     ? String(row.flashCutFrames)
         .split('|')
         .map((n) => toNumber(n, null))
         .filter((n) => n !== null)
     : defaultCutFrames(flashBooks.length);
+  // 显式切点全部非法（过滤后为空）时回退默认节奏，避免主书进入帧丢失。
+  if (flashCutFrames.length === 0) flashCutFrames = defaultCutFrames(flashBooks.length);
 
   return {
     flashCutFrames,

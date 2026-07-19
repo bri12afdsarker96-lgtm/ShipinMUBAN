@@ -7,17 +7,20 @@ import {renderMedia, selectComposition} from '@remotion/renderer';
 
 export const COMPOSITION_ID = 'BookIntroFromConfig';
 
-let cachedServeUrl = null;
+let bundlePromise = null;
 
-/** 打包 Remotion 项目（缓存，进程内只打一次）。 */
-export const getBundle = async (root) => {
-  if (!cachedServeUrl) {
-    cachedServeUrl = await bundle({
+/** 打包 Remotion 项目（缓存 in-flight Promise，进程内只打一次；并发调用不会重复打包）。 */
+export const getBundle = (root) => {
+  if (!bundlePromise) {
+    bundlePromise = bundle({
       entryPoint: path.join(root, 'src', 'index.ts'),
       publicDir: path.join(root, 'public'),
+    }).catch((error) => {
+      bundlePromise = null; // 打包失败时允许后续重试
+      throw error;
     });
   }
-  return cachedServeUrl;
+  return bundlePromise;
 };
 
 /** 渲染一条：inputProps 为原始三件套 + template/audio。带失败重试。 */

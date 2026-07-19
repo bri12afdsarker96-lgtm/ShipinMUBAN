@@ -60,6 +60,8 @@ export type BookIntroProps = {
   template?: string;
   /** 背景音乐路径（相对 public / 或 url），缺省用示例节拍。 */
   audio?: string;
+  /** 调试：显示右上角时间码水印（默认关，避免烧进成片）。 */
+  debug?: boolean;
   intro: IntroConfig;
   flashCutFrames: number[];
   bookCards: BookCoverCardData[];
@@ -139,6 +141,7 @@ export const loadConfigProps = (): BookIntroProps =>
 export type RawConfigInput = {
   template?: unknown;
   audio?: unknown;
+  debug?: unknown;
   books?: unknown;
   subtitles?: unknown;
   intro?: unknown;
@@ -165,6 +168,7 @@ export const propsFromRaw = (raw: RawConfigInput): BookIntroProps => ({
   ),
   template: typeof raw?.template === 'string' ? raw.template : undefined,
   audio: typeof raw?.audio === 'string' ? raw.audio : undefined,
+  debug: raw?.debug === true,
 });
 
 /** 根据 props 推算合适时长：主书页至少留 45 帧尾巴，字幕留 15 帧，最少 240 帧。 */

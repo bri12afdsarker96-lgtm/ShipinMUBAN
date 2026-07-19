@@ -43,8 +43,8 @@ const INITIAL: Form = {
 
 const SAMPLE_BATCH = JSON.stringify(
   [
-    {id: 'demo-classic', template: 'classic', mainTitle: '月亮与六便士', mainAuthor: '毛姆', mainZh: '满地都是六便士，他却抬头看见了月亮', flashBooks: '了不起的盖茨比 | 菲茨杰拉德 | 简爱 | 夏洛蒂 | 瓦尔登湖 | 梭罗'},
-    {id: 'demo-drama', template: 'drama', mainTitle: '东方快车谋杀案', mainAuthor: '阿加莎', mainZh: '真相只有一个', flashBooks: '福尔摩斯探案集 | 柯南道尔 | 无人生还 | 阿加莎 | 白夜行 | 东野圭吾'},
+    {id: 'demo-classic', template: 'classic', mainTitle: '月亮与六便士', mainAuthor: '毛姆', mainZh: '满地都是六便士，他却抬头看见了月亮', flashBooks: '了不起的盖茨比~菲茨杰拉德 | 简爱~夏洛蒂 | 瓦尔登湖~梭罗'},
+    {id: 'demo-drama', template: 'drama', mainTitle: '东方快车谋杀案', mainAuthor: '阿加莎', mainZh: '真相只有一个', flashBooks: '福尔摩斯探案集~柯南道尔 | 无人生还~阿加莎 | 白夜行~东野圭吾'},
   ],
   null,
   2,

@@ -174,17 +174,27 @@ a3476f4 阶段三：编辑器本地服务版
 - 编辑器：截图确认界面 + Player 出画 + `drama` 预设联动。
 - 服务：`/api/render` 出 1.19MB MP4；`/api/batch` 队列 2 条串行成功、进度轮询、产物 200 可访问。
 
-## 6. 已知限制与待改进（诚实清单）
+## 6. 复盘审查：已修与待办
 
-- **路径遍历（已加固）**：`server.mjs` 静态服务改用 `withinBase` 做 `path.resolve` 边界校验，
-  `..` 越界一律 404（已用多种编码/组合验证）。
-- **批量队列（已持久化历史）**：完成后归档 `manifest.json` 到 job 目录，`GET /api/batches` 融合
-  内存态与磁盘归档（服务重启后历史仍可见）；队列暂停/恢复/单条重试仍待做。
-- **视频 range 请求**：`serveStatic` 不支持 Range，超大 MP4 在部分浏览器 seek 受限（当前产物 ~1.5MB 无碍）。
-- **真实封面下载**：受本环境网络策略限制未能实测下载（Open Library 403 / Google 429），脚本逻辑正确、
-  已按设计降级；放开网络或本地环境可下载。
-- **音频瞬态检测**：时域能量法对强节拍稳定，对氛围类音乐会偏稀疏；未做节拍网格量化。
-- **样式**：GUI 用内联样式，未做响应式/主题；面向验证与自用，产品化可引入设计系统。
+经四组子代理逐文件审查（约 30 源文件），确认并修复以下问题。
+
+**本轮修复（严重 / 中）**
+- **并发池 worker 异常零隔离**（严重）→ `run-batch` worker 外层 `try/catch`，单条异常转 `failed`，绝不冒泡崩整批、丢归档。
+- **服务 async handler 未 await → unhandled rejection 崩溃进程**（严重，审查修复过程中实测暴露的真 bug）→ 路由统一 `await`。
+- 编辑器默认批量示例 `flashBooks` 分隔符笔误（`|` 兼作字段分隔）→ 改 `~` 分隔字段，书目带回作者。
+- 调试时间码水印恒显会烧进成片 → 改为 `props.debug` 控制，默认关（渲染帧已确认无水印）。
+- `parseBooksConfig` 对非对象 `throw` → 改为告警降级，与容错原则一致。
+- 非法 `flashCutFrames` 过滤为空不回退 → 回退默认节奏。
+- `runPostQc` 未校验 0 字节 → 补 `size>0`。
+- CSV 未去 UTF-8 BOM、`.tsv` 名不副实 → strip BOM + `.tsv` 按 tab 分列。
+- 服务健壮性：`readBody` 4MB 上限；畸形 JSON 返回 400 且不泄露内部；`getBundle` 缓存 in-flight Promise 防并发重复打包；Host 校验防 DNS-rebinding；`batchJobs` 容量回收；jobId/文件名随机后缀防同毫秒覆盖。
+
+**前轮已加固**：路径遍历 `withinBase` 边界校验；批量历史 `manifest` 归档 + `/api/batches`。
+
+**待办（轻项，非阻断）**
+- slug/key 三处重复、`WIDTH/HEIGHT` 常量三处、`BookIntro` 魔法数字与相似背景组件可提取、死字段清理。
+- `CoverImage` 约定路径恒非空 → 每帧一次失败图片请求，可改 `calculateMetadata` 期文件预检（"缺封面不中断"已实测保证）。
+- WAV 少数格式边界（64-bit float / EXTENSIBLE）、`renderJob` 无退避重试、真实封面下载受本环境网络策略未实测、瞬态检测对氛围乐偏稀疏、GUI 内联样式无响应式、桌面封装。
 
 ## 7. 后续建议（优先级）
 

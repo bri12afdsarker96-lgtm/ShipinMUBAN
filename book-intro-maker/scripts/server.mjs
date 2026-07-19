@@ -54,13 +54,35 @@ const sendJson = (res, code, obj) => {
   res.end(JSON.stringify(obj));
 };
 
+const MAX_BODY = 4 * 1024 * 1024; // 4MB 上限，防止无界 body 撑爆内存
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        req.destroy();
+        reject(Object.assign(new Error('请求体过大'), {statusCode: 413}));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
+
+// 读取并解析 JSON body，畸形输入抛 400（避免把内部错误经 500 泄露）。
+const readJson = async (req) => {
+  const body = await readBody(req);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw Object.assign(new Error('请求体不是合法 JSON'), {statusCode: 400});
+  }
+};
+
+const uniqueSuffix = () => Math.random().toString(36).slice(2, 7);
 
 const safeSlug = (value) =>
   String(value || '')
@@ -107,9 +129,9 @@ const serveStatic = async (res, filePath) => {
 
 // —— API ——
 const handleRender = async (req, res) => {
-  const raw = JSON.parse(await readBody(req));
+  const raw = await readJson(req);
   const id = safeSlug(raw.id || raw.mainTitle || 'editor');
-  const fileName = `${id}-${Date.now()}.mp4`;
+  const fileName = `${id}-${Date.now()}-${uniqueSuffix()}.mp4`;
   await mkdir(editorOutDir, {recursive: true});
   const outputPath = path.join(editorOutDir, fileName);
 
@@ -150,14 +172,19 @@ const handleRenders = async (res) => {
 
 const relUrl = (output) => (output ? `/${output.split(path.sep).join('/')}` : undefined);
 
+const MAX_BATCH_JOBS = 50; // 内存队列容量上限，超出淘汰最旧任务
+
 const handleBatchStart = async (req, res) => {
-  const body = JSON.parse(await readBody(req));
+  const body = await readJson(req);
   const videos = Array.isArray(body.videos) ? body.videos : Array.isArray(body) ? body : [];
   if (videos.length === 0) return sendJson(res, 400, {ok: false, error: '缺少 videos 数组'});
 
-  const jobId = `batch-${Date.now()}`;
+  const jobId = `batch-${Date.now()}-${uniqueSuffix()}`;
   const outDir = path.join(editorOutDir, jobId);
   const state = {jobId, total: videos.length, records: new Array(videos.length).fill(null), running: true, createdAt: new Date().toISOString()};
+  if (batchJobs.size >= MAX_BATCH_JOBS) {
+    batchJobs.delete(batchJobs.keys().next().value); // Map 保插入序，删最旧
+  }
   batchJobs.set(jobId, state);
 
   console.log(`[batch] ${jobId} 启动，共 ${videos.length} 条`);
@@ -236,18 +263,25 @@ const handleAssets = async (res) => {
 
 const server = createServer(async (req, res) => {
   try {
+    // 防 DNS-rebinding：只接受本机 Host，挡住外部域名指向 127.0.0.1 的浏览器请求。
+    const host = (req.headers.host || '').split(':')[0];
+    if (host && host !== '127.0.0.1' && host !== 'localhost') {
+      res.writeHead(403, {'content-type': 'text/plain; charset=utf-8'});
+      return res.end('Forbidden host');
+    }
     if (req.method === 'OPTIONS') {
       cors(res);
       res.writeHead(204);
       return res.end();
     }
     const url = req.url || '/';
+    // 注意：async handler 必须 await，否则内部抛错会变成 unhandled rejection 崩溃进程。
     if (url === '/api/health') return sendJson(res, 200, {ok: true});
-    if (url === '/api/assets') return handleAssets(res);
-    if (url.startsWith('/api/renders')) return handleRenders(res);
-    if (url === '/api/render' && req.method === 'POST') return handleRender(req, res);
-    if (url === '/api/batches') return handleBatchesList(res);
-    if (url === '/api/batch' && req.method === 'POST') return handleBatchStart(req, res);
+    if (url === '/api/assets') return await handleAssets(res);
+    if (url.startsWith('/api/renders')) return await handleRenders(res);
+    if (url === '/api/render' && req.method === 'POST') return await handleRender(req, res);
+    if (url === '/api/batches') return await handleBatchesList(res);
+    if (url === '/api/batch' && req.method === 'POST') return await handleBatchStart(req, res);
     if (url.startsWith('/api/batch/')) return handleBatchStatus(res, url.slice('/api/batch/'.length).split('?')[0]);
 
     const filePath = resolveStatic(url);
@@ -256,10 +290,12 @@ const server = createServer(async (req, res) => {
       res.writeHead(404, {'content-type': 'text/plain; charset=utf-8'});
       return res.end('Not Found');
     }
-    return serveStatic(res, filePath);
+    return await serveStatic(res, filePath);
   } catch (error) {
     console.error(error);
-    return sendJson(res, 500, {ok: false, error: error.message});
+    const code = error?.statusCode || 500;
+    // 客户端错误（400/413）回显受控文案；服务器错误不泄露内部 message。
+    return sendJson(res, code, {ok: false, error: code >= 500 ? '服务器内部错误' : error.message});
   }
 });
 

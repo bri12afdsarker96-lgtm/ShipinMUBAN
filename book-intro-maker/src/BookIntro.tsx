@@ -332,9 +332,11 @@ export const BookIntroVideo: React.FC<BookIntroProps> = (props) => {
 
       {props.intro.showSubtitles ? <SubtitleTrack tracks={props.subtitleTracks} /> : null}
 
-      <div style={{position: 'absolute', top: 24, right: 24, color: 'rgba(255,255,255,0.42)', fontSize: 13}}>
-        {(frame / fps).toFixed(2)}s
-      </div>
+      {props.debug ? (
+        <div style={{position: 'absolute', top: 24, right: 24, color: 'rgba(255,255,255,0.42)', fontSize: 13}}>
+          {(frame / fps).toFixed(2)}s
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 };

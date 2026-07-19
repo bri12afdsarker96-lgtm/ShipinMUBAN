@@ -2,7 +2,7 @@
 //   error   会阻断渲染（该条标记 qc-failed）。
 //   warning 记录但继续（可能影响观感，如字幕溢出）。
 //   info    提示信息（如封面缺失，会自动降级为生成式封面）。
-import {existsSync} from 'node:fs';
+import {existsSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {conventionCoverPath} from '../../lib/cover-path.mjs';
 
@@ -87,6 +87,10 @@ export const runPostQc = (outputPath) => {
   const errors = [];
   if (!existsSync(outputPath)) {
     errors.push('输出文件不存在');
+    return {errors};
+  }
+  if (statSync(outputPath).size === 0) {
+    errors.push('输出文件为空（0 字节）');
   }
   return {errors};
 };

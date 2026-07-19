@@ -2,8 +2,8 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 
-/** 极简 CSV 解析，支持双引号包裹、字段内逗号/换行、"" 转义。 */
-export const parseCsv = (text) => {
+/** 极简 CSV/TSV 解析，支持双引号包裹、字段内分隔符/换行、"" 转义。 */
+export const parseCsv = (text, delimiter = ',') => {
   const rows = [];
   let row = [];
   let field = '';
@@ -26,7 +26,7 @@ export const parseCsv = (text) => {
     }
     if (ch === '"') {
       inQuotes = true;
-    } else if (ch === ',') {
+    } else if (ch === delimiter) {
       row.push(field);
       field = '';
     } else if (ch === '\n' || ch === '\r') {
@@ -69,15 +69,15 @@ export const parseCsv = (text) => {
 
 /** 读取输入文件，按扩展名解析为行对象数组。 */
 export const parseInputFile = async (filePath) => {
-  const text = await readFile(filePath, 'utf8');
+  // 去除 UTF-8 BOM（Excel 导出的 CSV 常带），否则首列表头会带上 ﻿。
+  const text = (await readFile(filePath, 'utf8')).replace(/^﻿/, '');
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.json') {
     const data = JSON.parse(text);
     const rows = Array.isArray(data) ? data : Array.isArray(data.videos) ? data.videos : [data];
     return rows;
   }
-  if (ext === '.csv' || ext === '.tsv') {
-    return parseCsv(text);
-  }
-  throw new Error(`不支持的输入格式: ${ext}（支持 .json / .csv）`);
+  if (ext === '.csv') return parseCsv(text, ',');
+  if (ext === '.tsv') return parseCsv(text, '\t');
+  throw new Error(`不支持的输入格式: ${ext}（支持 .json / .csv / .tsv）`);
 };

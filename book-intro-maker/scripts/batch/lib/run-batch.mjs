@@ -71,29 +71,37 @@ export const runBatch = async ({rows, root, assets, browserExecutable, concurren
         onProgress(rec);
         return rec;
       }
-      onProgress({...base, status: 'rendering'});
+      // 隔离单条异常：worker 内任何一步意外抛错都转成 failed 记录，
+      // 绝不冒泡到 runPool（否则 Promise.all reject 会让整批崩溃、已完成记录与归档全丢）。
+      try {
+        onProgress({...base, status: 'rendering'});
 
-      const outputPath = path.join(outDir, `${job.id}.mp4`);
-      const started = Date.now();
-      const inputProps = {...job.config, template: job.template, audio: job.audio};
-      const result = await renderJob({serveUrl, inputProps, outputPath, browserExecutable, retries});
-      const ms = Date.now() - started;
+        const outputPath = path.join(outDir, `${job.id}.mp4`);
+        const started = Date.now();
+        const inputProps = {...job.config, template: job.template, audio: job.audio};
+        const result = await renderJob({serveUrl, inputProps, outputPath, browserExecutable, retries});
+        const ms = Date.now() - started;
 
-      if (!result.ok) {
-        const rec = {...base, status: 'failed', error: result.error, ms};
+        if (!result.ok) {
+          const rec = {...base, status: 'failed', error: result.error, ms};
+          onProgress(rec);
+          return rec;
+        }
+        const post = runPostQc(outputPath);
+        if (post.errors.length) {
+          const rec = {...base, status: 'failed', error: post.errors.join('；'), ms};
+          onProgress(rec);
+          return rec;
+        }
+        const {size} = await stat(outputPath);
+        const rec = {...base, status: 'rendered', output: path.relative(root, outputPath), bytes: size, ms};
+        onProgress(rec);
+        return rec;
+      } catch (error) {
+        const rec = {...base, status: 'failed', error: error?.message || String(error)};
         onProgress(rec);
         return rec;
       }
-      const post = runPostQc(outputPath);
-      if (post.errors.length) {
-        const rec = {...base, status: 'failed', error: post.errors.join('；'), ms};
-        onProgress(rec);
-        return rec;
-      }
-      const {size} = await stat(outputPath);
-      const rec = {...base, status: 'rendered', output: path.relative(root, outputPath), bytes: size, ms};
-      onProgress(rec);
-      return rec;
     },
     concurrency,
   );
