@@ -96,6 +96,11 @@ const uploadTinyAsset = async (kind, fileName, mime, base64) => {
   return {res, data: await res.json().catch(() => ({}))};
 };
 
+const postJson = async (url, body) => {
+  const res = await fetch(url, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  return {res, data: await res.json().catch(() => ({}))};
+};
+
 const srv = spawn('node', [path.join('scripts', 'server.mjs')], {env: {...process.env, PORT: String(PORT)}, stdio: 'ignore'});
 
 try {
@@ -130,8 +135,21 @@ try {
     ok(assetList.assets?.backgrounds?.some((item) => item.path === bgUpload.data.path), '上传后的背景图出现在素材库清单');
     ok(assetList.assets?.audio?.some((item) => item.path === audioUpload.data.path), '上传后的音乐出现在素材库清单');
     ok(assetList.assets?.introVideos?.some((item) => item.path === introUpload.data.path), '上传后的开场视频出现在素材库清单');
-    for (const item of [bgUpload.data, audioUpload.data, introUpload.data]) {
-      if (item.path) await rm(path.join(process.cwd(), 'public', item.path), {force: true});
+
+    // —— 集成：素材重命名 / 删除路径校验（无需渲染）——
+    console.log('集成：素材重命名与删除');
+    const badDelete = await postJson(`${B}/api/assets/delete`, {kind: 'backgrounds', path: '../../sample-beat.wav'});
+    ok(badDelete.res.status === 400, '越界素材删除路径被拒绝');
+    const renamed = await postJson(`${B}/api/assets/rename`, {kind: 'backgrounds', path: bgUpload.data.path, name: '../../新背景.html'});
+    ok(renamed.res.status === 200 && /^backgrounds\/新背景.*\.png$/.test(renamed.data.asset?.path || ''), '危险重命名被清理且保留原扩展名');
+    const afterRename = await (await fetch(`${B}/api/assets`)).json();
+    ok(!afterRename.assets?.backgrounds?.some((item) => item.path === bgUpload.data.path), '重命名后旧路径不再出现在素材库');
+    ok(afterRename.assets?.backgrounds?.some((item) => item.path === renamed.data.asset?.path), '重命名后新路径出现在素材库');
+    const deleted = await postJson(`${B}/api/assets/delete`, {kind: 'backgrounds', path: renamed.data.asset?.path});
+    ok(deleted.res.status === 200 && deleted.data.deletedPath === renamed.data.asset?.path, '素材删除仅删除清单内目标');
+
+    for (const item of [bgUpload.data, renamed.data.asset, audioUpload.data, introUpload.data]) {
+      if (item?.path) await rm(path.join(process.cwd(), 'public', item.path), {force: true});
     }
 
     // —— 集成：批量队列失败原因 + 单条重试入口（无需渲染）——

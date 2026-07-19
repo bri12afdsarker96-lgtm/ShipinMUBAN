@@ -30,6 +30,7 @@
 | 4D | 待立项 | 视觉验收 | 自动导出关键帧截图，便于人工检查遮挡、错位、字幕溢出 |
 | 5A | 第一版完成 | 桌面封装选型 | 已生成 NSIS 引导安装包，目录版 Windows 客户端可启动 |
 | 5B | 第一版完成 | 客户端信息架构 | 素材库、任务中心、设置页独立，编辑页从素材库选择素材 |
+| 5C | 已完成 | 素材库管理与可视化选择 | 搜索/筛选/改名/删除、主界面可视化选择、任务中心 Web 降级、v0.3.0 安装包 |
 
 ## 3E 任务包
 
@@ -98,6 +99,9 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 - `book-intro-maker/public/intro-videos/*`
 - `book-intro-maker/public/audio/*`
 - `book-intro-maker/gui/dist/`
+- `book-intro-maker/release/`
+- `book-intro-maker/node_modules/`
+- `book-intro-maker/out/`
 
 ## 下一步
 
@@ -271,3 +275,35 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 - `npm.cmd run dist:win` 通过，生成 `book-intro-maker/release/水星视频模板-Setup-0.2.1.exe`，大小 134,889,465 bytes，SHA256 `28CC38E9EEB7AFE986E6A945623DF0B639CD884CBCA763FDF7AC954DABD7D010`。
 - 目录版客户端 `release/win-unpacked/水星视频模板.exe` 启动验收通过，`http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`。
 - 浏览器实测：编辑页可见区不再显示导出配置；素材库、任务中心、设置页入口均能独立打开；设置页显示高级配置 JSON；素材库可扫描到示例音乐 `sample-beat.wav`。
+
+## 5C 第一版：素材库管理与可视化选择
+
+用户继续指出：素材库要能上传很多素材，在主界面给出选择项；右侧导出配置应出现在任务列表或设置中。本阶段把 v0.2.1 的“下拉选择素材”升级为“素材库可管理、主界面可视化选择”。
+
+| 项目 | 结果 |
+| --- | --- |
+| 版本号 | `0.3.0` |
+| 素材库管理 | 新增素材搜索、分类筛选、缩略图预览、复制路径、页面内改名、二次确认删除 |
+| 服务端接口 | 新增 `POST /api/assets/rename` 与 `POST /api/assets/delete`，只允许操作固定上传目录内文件 |
+| 主编辑页 | 背景音乐、背景图、主书封面、快闪书单逐本封面、开场视频均通过可视化素材弹层选择 |
+| 快闪书单封面 | 每本书保留独立封面选择入口，仍兼容文本批量编辑 |
+| 任务中心 | 最近生成视频支持播放、下载、复制路径的 Web 降级操作；批量任务保留在同一任务中心 |
+| 设置页 | 展示素材目录、输出目录和高级导出配置；不开放任意本地目录托管 |
+| 阶段报告 | 新增 `docs/v0.3-review-checklist.md` 与 `docs/v0.3-completion-report.md` |
+
+安全约束：
+
+- 删除与重命名只允许 `covers/backgrounds/introVideos/audio` 四类上传目录。
+- 拒绝 `..`、反斜杠、远程 URL、`data:`、`blob:`、跨分类路径。
+- 重命名保留原扩展名，不允许改成 `.html`、`.svg`、`.js` 等格式。
+- 同名目标不会覆盖已有文件。
+
+验证结果：
+
+- `node --check scripts/server.mjs` 与 `node --check scripts/test-regressions.mjs` 通过。
+- `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run gui:build` 通过。
+- `RUN_RENDER_TESTS=1 npm.cmd test` 通过 28 项，包含真实浏览器渲染出片。
+- 浏览器实测：素材库搜索/筛选、页面内改名/删除、主制作页素材选择弹层、快闪书单封面入口、任务中心、设置页均通过。
+- `npm.cmd run dist:win` 通过，生成 `book-intro-maker/release/水星视频模板-Setup-0.3.0.exe`，大小 134,892,118 bytes，SHA256 `0527C27D1D6863FB57E16CCDC94FE6E95CCEE0D31EEB76CF20919AF29359B659`。
+- 目录版客户端 `release/win-unpacked/水星视频模板.exe` 启动验收通过，`http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`。

@@ -11,7 +11,7 @@
 // 用法：npm run gui:build && node scripts/server.mjs   然后打开 http://127.0.0.1:4000
 
 import {createServer} from 'node:http';
-import {readFile, readdir, stat, mkdir, writeFile} from 'node:fs/promises';
+import {readFile, readdir, stat, mkdir, writeFile, rename, unlink} from 'node:fs/promises';
 import {existsSync, createReadStream} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -462,6 +462,7 @@ const listAssetFiles = async (kind, spec) => {
       const filePath = path.join(folder.dir, entry.name);
       const info = await stat(filePath);
       const assetPath = folder.prefix ? `${folder.prefix}/${entry.name}` : entry.name;
+      const mutable = Boolean(folder.prefix);
       items.push({
         kind,
         name: entry.name,
@@ -470,6 +471,7 @@ const listAssetFiles = async (kind, spec) => {
         bytes: info.size,
         mtime: info.mtimeMs,
         mime: MIME[ext] || 'application/octet-stream',
+        mutable,
       });
     }
   }
@@ -522,6 +524,111 @@ const UPLOAD_KINDS = {
     },
   },
 };
+
+const mutableAssetExtensions = (kind) => ASSET_LIBRARY_KINDS[kind]?.extensions || new Set();
+
+const resolveMutableAsset = (kind, rawPath) => {
+  const spec = UPLOAD_KINDS[kind];
+  if (!spec) throw Object.assign(new Error('不支持的素材类型'), {statusCode: 400});
+
+  const value = String(rawPath || '').trim();
+  if (!value || /^(https?:|data:|blob:)/i.test(value) || /[\\]/.test(value) || value.includes('..')) {
+    throw Object.assign(new Error('素材路径无效'), {statusCode: 400});
+  }
+
+  const clean = value.replace(/^public\//, '').replace(/^\/+/, '');
+  const baseName = path.posix.basename(clean);
+  if (!baseName || clean !== `${spec.prefix}/${baseName}`) {
+    throw Object.assign(new Error('只能操作对应素材分类目录内的文件'), {statusCode: 400});
+  }
+
+  const ext = path.extname(baseName).toLowerCase();
+  if (!mutableAssetExtensions(kind).has(ext)) {
+    throw Object.assign(new Error('素材文件格式不允许操作'), {statusCode: 400});
+  }
+
+  const fullPath = withinBase(spec.dir, path.join(spec.dir, baseName));
+  if (!fullPath) throw Object.assign(new Error('素材路径越界'), {statusCode: 400});
+  return {spec, baseName, ext, fullPath, assetPath: `${spec.prefix}/${baseName}`};
+};
+
+const assetResponseForFile = async (kind, spec, filePath) => {
+  const info = await stat(filePath);
+  const name = path.basename(filePath);
+  const ext = path.extname(name).toLowerCase();
+  const assetPath = `${spec.prefix}/${name}`;
+  return {
+    kind,
+    name,
+    path: assetPath,
+    url: `/${assetPath}`,
+    bytes: info.size,
+    mtime: info.mtimeMs,
+    mime: MIME[ext] || 'application/octet-stream',
+    mutable: true,
+  };
+};
+
+const handleAssetRename = async (req, res) => {
+  const body = await readJson(req);
+  const kind = String(body.kind || '');
+  const current = resolveMutableAsset(kind, body.path);
+  if (!existsSync(current.fullPath)) return sendJson(res, 404, {ok: false, error: '素材不存在'});
+
+  const requested = String(body.name || '').trim();
+  const requestedExt = path.extname(requested);
+  const requestedBase = path.basename(requested, requestedExt);
+  const nextBase = safeSlug(requestedBase);
+  const nextName = `${nextBase}${current.ext}`;
+  let targetPath = withinBase(current.spec.dir, path.join(current.spec.dir, nextName));
+  if (!targetPath) return sendJson(res, 400, {ok: false, error: '新文件名无效'});
+  if (targetPath === current.fullPath) {
+    return sendJson(res, 200, {ok: true, kind, asset: await assetResponseForFile(kind, current.spec, current.fullPath)});
+  }
+  if (existsSync(targetPath)) {
+    const fallbackName = `${nextBase}-${Date.now()}-${uniqueSuffix()}${current.ext}`;
+    targetPath = withinBase(current.spec.dir, path.join(current.spec.dir, fallbackName));
+    if (!targetPath) return sendJson(res, 400, {ok: false, error: '新文件名无效'});
+  }
+
+  await rename(current.fullPath, targetPath);
+  return sendJson(res, 200, {
+    ok: true,
+    kind,
+    oldPath: current.assetPath,
+    asset: await assetResponseForFile(kind, current.spec, targetPath),
+  });
+};
+
+const handleAssetDelete = async (req, res) => {
+  const body = await readJson(req);
+  const kind = String(body.kind || '');
+  const target = resolveMutableAsset(kind, body.path);
+  if (!existsSync(target.fullPath)) return sendJson(res, 404, {ok: false, error: '素材不存在'});
+  await unlink(target.fullPath);
+  return sendJson(res, 200, {ok: true, kind, deletedPath: target.assetPath});
+};
+
+const handleSettings = (res) =>
+  sendJson(res, 200, {
+    ok: true,
+    version: '0.3.0',
+    directories: {
+      materials: {
+        covers: path.join(publicDir, 'covers'),
+        backgrounds: path.join(publicDir, 'backgrounds'),
+        introVideos: path.join(publicDir, 'intro-videos'),
+        audio: path.join(publicDir, 'audio'),
+      },
+      output: editorOutDir,
+      outputRoot: outDir,
+    },
+    capabilities: {
+      systemOpen: false,
+      showInFolder: false,
+      webFallback: true,
+    },
+  });
 
 const handleAssetUpload = async (req, res) => {
   const body = await readUploadJson(req);
@@ -651,8 +758,11 @@ const server = createServer(async (req, res) => {
     const url = req.url || '/';
     // 注意：async handler 必须 await，否则内部抛错会变成 unhandled rejection 崩溃进程。
     if (url === '/api/health') return sendJson(res, 200, {ok: true});
+    if (url === '/api/settings') return handleSettings(res);
     if (url === '/api/assets') return await handleAssets(res);
     if (url === '/api/assets/upload' && req.method === 'POST') return await handleAssetUpload(req, res);
+    if (url === '/api/assets/rename' && req.method === 'POST') return await handleAssetRename(req, res);
+    if (url === '/api/assets/delete' && req.method === 'POST') return await handleAssetDelete(req, res);
     if (url === '/api/beats/detect' && req.method === 'POST') return await handleBeatsDetect(req, res);
     if (url === '/api/covers/lookup' && req.method === 'POST') return await handleCoverLookup(req, res);
     if (url.startsWith('/api/renders')) return await handleRenders(res);

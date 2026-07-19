@@ -90,9 +90,15 @@ type BatchState = {
 
 type View = 'edit' | 'assets' | 'tasks' | 'batch' | 'settings';
 type AssetKind = 'covers' | 'backgrounds' | 'introVideos' | 'audio';
-type AssetItem = {kind: AssetKind; name: string; path: string; url: string; bytes?: number; mtime?: number; mime?: string};
+type AssetItem = {kind: AssetKind; name: string; path: string; url: string; bytes?: number; mtime?: number; mime?: string; mutable?: boolean};
 type AssetLibrary = Record<AssetKind, AssetItem[]>;
 type RenderItem = {url: string; bytes?: number; mtime?: number};
+type AppSettings = {
+  version?: string;
+  directories?: {materials?: Partial<Record<AssetKind, string>>; output?: string; outputRoot?: string};
+  capabilities?: {systemOpen?: boolean; showInFolder?: boolean; webFallback?: boolean};
+};
+type AssetChooserState = {kind: AssetKind; title: string; current?: string; onSelect: (value: string) => void};
 
 const EMPTY_LIBRARY: AssetLibrary = {covers: [], backgrounds: [], introVideos: [], audio: []};
 const ASSET_KIND_META: Record<AssetKind, {label: string; hint: string; accept: string}> = {
@@ -209,6 +215,7 @@ const buildRaw = (form: Form): RawConfigInput => {
 const labelStyle: React.CSSProperties = {display: 'block', fontSize: 12, color: '#5b6472', marginBottom: 4, marginTop: 14, fontWeight: 600};
 const inputStyle: React.CSSProperties = {width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #d3d9e0', borderRadius: 8, fontSize: 14, background: '#fff'};
 const softButtonStyle: React.CSSProperties = {padding: '8px 13px', borderRadius: 4, border: '1px solid #d7deea', background: '#eef2fb', color: '#2b3a67', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap'};
+const dangerButtonStyle: React.CSSProperties = {...softButtonStyle, background: '#fff0ef', borderColor: '#ffd0cc', color: '#b53027'};
 const sidebarButtonStyle = (active: boolean): React.CSSProperties => ({
   width: '100%',
   padding: '16px 15px',
@@ -279,6 +286,7 @@ const initialForm = (): Form => {
 
 export const App: React.FC = () => {
   const [form, setForm] = useState<Form>(initialForm);
+  const [view, setView] = useState<View>(viewFromUrl);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({...f, [key]: value}));
   const flashBookRows = useMemo(() => parseFlashBooksText(form.flashBooksText), [form.flashBooksText]);
 
@@ -301,6 +309,13 @@ export const App: React.FC = () => {
   const [coverLookup, setCoverLookup] = useState<{status: 'idle' | 'querying' | 'done' | 'placeholder' | 'error'; message?: string}>({status: 'idle'});
   const [assetLibrary, setAssetLibrary] = useState<AssetLibrary>(EMPTY_LIBRARY);
   const [libraryStatus, setLibraryStatus] = useState<{status: 'idle' | 'loading' | 'ready' | 'error'; message?: string}>({status: 'idle'});
+  const [assetSearch, setAssetSearch] = useState('');
+  const [assetKindFilter, setAssetKindFilter] = useState<AssetKind | 'all'>('all');
+  const [assetChooser, setAssetChooser] = useState<AssetChooserState | null>(null);
+  const [assetNotice, setAssetNotice] = useState<{status: 'idle' | 'done' | 'error'; message?: string}>({status: 'idle'});
+  const [renamingAsset, setRenamingAsset] = useState<{path: string; name: string} | null>(null);
+  const [deleteConfirmPath, setDeleteConfirmPath] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
@@ -324,6 +339,21 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (apiOk) void loadAssetLibrary();
   }, [apiOk]);
+
+  const loadSettings = async () => {
+    if (!apiOk) return;
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      if (data.ok) setSettings(data);
+    } catch {
+      /* 设置读取失败不影响编辑器 */
+    }
+  };
+
+  useEffect(() => {
+    if (apiOk && view === 'settings') void loadSettings();
+  }, [apiOk, view]);
 
   const renderNow = async () => {
     setRender({status: 'rendering'});
@@ -450,7 +480,6 @@ export const App: React.FC = () => {
   };
 
   // 批量队列
-  const [view, setView] = useState<View>(viewFromUrl);
   const [batchText, setBatchText] = useState(SAMPLE_BATCH);
   const [batch, setBatch] = useState<BatchState>({records: [], running: false, paused: false, retrying: []});
   useEffect(() => {
@@ -537,22 +566,89 @@ export const App: React.FC = () => {
     if ((view === 'batch' || view === 'tasks') && apiOk) void refreshTasks();
   }, [view, apiOk, batch.running]);
 
+  const copyText = (value: string) => {
+    navigator.clipboard?.writeText(value).catch(() => undefined);
+  };
+
+  const replaceAssetPath = (oldPath: string, nextPath: string) => {
+    setForm((current) => {
+      const books = parseFlashBooksText(current.flashBooksText).map((book) => ({
+        ...book,
+        coverPath: book.coverPath === oldPath ? nextPath || undefined : book.coverPath,
+      }));
+      return {
+        ...current,
+        audio: current.audio === oldPath ? nextPath : current.audio,
+        flashBackgroundPath: current.flashBackgroundPath === oldPath ? nextPath : current.flashBackgroundPath,
+        mainCoverPath: current.mainCoverPath === oldPath ? nextPath : current.mainCoverPath,
+        mainBackgroundPath: current.mainBackgroundPath === oldPath ? nextPath : current.mainBackgroundPath,
+        introVideoPath: current.introVideoPath === oldPath ? nextPath : current.introVideoPath,
+        introBackgroundPath: current.introBackgroundPath === oldPath ? nextPath : current.introBackgroundPath,
+        flashBooksText: formatFlashBooksText(books),
+      };
+    });
+  };
+
+  const renameAsset = async (item: AssetItem, nextName: string) => {
+    if (!item.mutable) return;
+    if (!nextName || nextName.trim() === item.name) return;
+    try {
+      const res = await fetch('/api/assets/rename', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({kind: item.kind, path: item.path, name: nextName})});
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || '重命名失败');
+      if (data.asset?.path) replaceAssetPath(item.path, data.asset.path);
+      setAssetNotice({status: 'done', message: `已重命名：${data.asset?.name || nextName}`});
+      setRenamingAsset(null);
+      setDeleteConfirmPath(null);
+      await loadAssetLibrary();
+    } catch (error) {
+      setAssetNotice({status: 'error', message: String(error)});
+    }
+  };
+
+  const deleteAsset = async (item: AssetItem) => {
+    if (!item.mutable) return;
+    try {
+      const res = await fetch('/api/assets/delete', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({kind: item.kind, path: item.path})});
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || '删除失败');
+      replaceAssetPath(item.path, '');
+      setAssetNotice({status: 'done', message: `已删除：${item.name}`});
+      setRenamingAsset(null);
+      setDeleteConfirmPath(null);
+      await loadAssetLibrary();
+    } catch (error) {
+      setAssetNotice({status: 'error', message: String(error)});
+    }
+  };
+
   const assetItems = (kind: AssetKind) => assetLibrary[kind] || [];
   const assetLabel = (item: AssetItem) => `${item.name}${item.bytes ? ` · ${formatBytes(item.bytes)}` : ''}`;
+  const findAsset = (kind: AssetKind, value: string) => assetItems(kind).find((item) => item.path === value);
+  const filteredAssetItems = (kind: AssetKind, query = assetSearch) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return assetItems(kind);
+    return assetItems(kind).filter((item) => `${item.name} ${item.path}`.toLowerCase().includes(q));
+  };
 
   const assetPicker = (kind: AssetKind, value: string, onChange: (value: string) => void, emptyLabel = '不选择素材') => {
-    const items = assetItems(kind);
-    const hasCurrent = value && items.some((item) => item.path === value);
+    const current = value ? findAsset(kind, value) : null;
     return (
-      <select style={{...inputStyle, flex: 1}} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{emptyLabel}</option>
-        {value && !hasCurrent ? <option value={value}>当前路径：{value}</option> : null}
-        {items.map((item) => (
-          <option key={item.path} value={item.path}>
-            {assetLabel(item)}
-          </option>
-        ))}
-      </select>
+      <div style={{display: 'flex', flex: 1, gap: 8, minWidth: 0}}>
+        <button
+          type="button"
+          onClick={() => setAssetChooser({kind, title: ASSET_KIND_META[kind].label, current: value, onSelect: onChange})}
+          style={{...inputStyle, flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', color: value ? '#101a36' : '#8a93a0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}
+          title={value || emptyLabel}
+        >
+          {current ? assetLabel(current) : value || emptyLabel}
+        </button>
+        {value ? (
+          <button type="button" onClick={() => onChange('')} style={{...softButtonStyle, padding: '8px 10px'}}>
+            清空
+          </button>
+        ) : null}
+      </div>
     );
   };
 
@@ -565,6 +661,68 @@ export const App: React.FC = () => {
     }
     return <div style={{fontSize: 22, color: '#6d7890'}}>♪</div>;
   };
+
+  const assetCard = (item: AssetItem, options: {compact?: boolean; selectable?: boolean} = {}) => (
+    <div key={item.path} style={{border: '1px solid #e1e6ee', background: '#fff'}}>
+      <button
+        type="button"
+        onClick={() => {
+          if (options.selectable && assetChooser) {
+            assetChooser.onSelect(item.path);
+            setAssetChooser(null);
+          }
+        }}
+        style={{width: '100%', height: options.compact ? 86 : 98, border: 'none', padding: 0, background: '#eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: options.selectable ? 'pointer' : 'default'}}
+        title={options.selectable ? `选择 ${item.name}` : item.name}
+      >
+        {assetPreview(item)}
+      </button>
+      <div style={{padding: 8}}>
+        <div title={item.name} style={{fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{item.name}</div>
+        <div style={{fontSize: 11, color: '#8a93a0', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{formatBytes(item.bytes) || item.path}</div>
+        <div style={{display: 'grid', gridTemplateColumns: item.mutable ? '1fr 1fr' : '1fr', gap: 6, marginTop: 8}}>
+          <button type="button" onClick={() => copyText(item.path)} style={{...softButtonStyle, padding: '5px 8px'}}>
+            复制
+          </button>
+          {item.mutable ? (
+            <button type="button" onClick={() => { setRenamingAsset({path: item.path, name: item.name}); setDeleteConfirmPath(null); }} style={{...softButtonStyle, padding: '5px 8px'}}>
+              {renamingAsset?.path === item.path ? '改名中' : '改名'}
+            </button>
+          ) : null}
+        </div>
+        {item.mutable && renamingAsset?.path === item.path ? (
+          <div style={{marginTop: 8}}>
+            <input
+              value={renamingAsset.name}
+              onChange={(e) => setRenamingAsset({path: item.path, name: e.target.value})}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void renameAsset(item, renamingAsset.name);
+                if (e.key === 'Escape') setRenamingAsset(null);
+              }}
+              style={{...inputStyle, padding: '6px 8px', fontSize: 12}}
+            />
+            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6}}>
+              <button type="button" onClick={() => renameAsset(item, renamingAsset.name)} style={{...softButtonStyle, padding: '5px 8px'}}>
+                保存
+              </button>
+              <button type="button" onClick={() => setRenamingAsset(null)} style={{...softButtonStyle, background: '#fff', padding: '5px 8px'}}>
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {item.mutable ? (
+          <button
+            type="button"
+            onClick={() => (deleteConfirmPath === item.path ? deleteAsset(item) : (setDeleteConfirmPath(item.path), setRenamingAsset(null)))}
+            style={{...dangerButtonStyle, padding: '5px 8px', marginTop: 6, width: '100%', background: deleteConfirmPath === item.path ? '#c81e1e' : dangerButtonStyle.background}}
+          >
+            {deleteConfirmPath === item.path ? '确认删除' : '删除'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 
   const libraryCount = ASSET_KINDS.reduce((total, kind) => total + assetItems(kind).length, 0);
 
@@ -580,10 +738,20 @@ export const App: React.FC = () => {
         </button>
       </div>
       {libraryStatus.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginBottom: 12}}>{libraryStatus.message}</div> : null}
+      {assetNotice.status !== 'idle' && assetNotice.message ? <div style={{fontSize: 12, color: assetNotice.status === 'error' ? '#d33' : '#16a34a', marginBottom: 12}}>{assetNotice.message}</div> : null}
+      <div style={{display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 180px', gap: 10, marginBottom: 14}}>
+        <input style={inputStyle} value={assetSearch} onChange={(e) => setAssetSearch(e.target.value)} placeholder="搜索素材名称或路径" />
+        <select style={inputStyle} value={assetKindFilter} onChange={(e) => setAssetKindFilter(e.target.value as AssetKind | 'all')}>
+          <option value="all">全部分类</option>
+          {ASSET_KINDS.map((kind) => (
+            <option key={kind} value={kind}>{ASSET_KIND_META[kind].label}</option>
+          ))}
+        </select>
+      </div>
       <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: 16}}>
-        {ASSET_KINDS.map((kind) => {
+        {ASSET_KINDS.filter((kind) => assetKindFilter === 'all' || assetKindFilter === kind).map((kind) => {
           const meta = ASSET_KIND_META[kind];
-          const items = assetItems(kind);
+          const items = filteredAssetItems(kind);
           return (
             <section key={kind} style={{background: '#fff', border: '1px solid #e5eaf3', padding: 16}}>
               <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12}}>
@@ -599,19 +767,8 @@ export const App: React.FC = () => {
               {items.length === 0 ? (
                 <div style={{height: 122, border: '1px dashed #ccd5e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a93a0', fontSize: 13}}>暂无素材</div>
               ) : (
-                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 10}}>
-                  {items.map((item) => (
-                    <div key={item.path} style={{border: '1px solid #e1e6ee', background: '#fff'}}>
-                      <div style={{height: 92, background: '#eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'}}>{assetPreview(item)}</div>
-                      <div style={{padding: 8}}>
-                        <div title={item.name} style={{fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{item.name}</div>
-                        <div style={{fontSize: 11, color: '#8a93a0', marginTop: 3}}>{formatBytes(item.bytes)}</div>
-                        <button type="button" onClick={() => navigator.clipboard?.writeText(item.path).catch(() => undefined)} style={{...softButtonStyle, padding: '5px 8px', marginTop: 8, width: '100%'}}>
-                          复制路径
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))', gap: 10}}>
+                  {items.map((item) => assetCard(item))}
                 </div>
               )}
             </section>
@@ -639,6 +796,8 @@ export const App: React.FC = () => {
             {renders.slice(0, 20).map((item) => (
               <div key={item.url} style={{display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #eef1f5', padding: '7px 0', fontSize: 13}}>
                 <a href={item.url} target="_blank" rel="noreferrer" style={{color: '#2f6bff', fontWeight: 700}}>播放视频</a>
+                <a href={item.url} download style={{color: '#2f6bff'}}>下载</a>
+                <button type="button" onClick={() => copyText(item.url)} style={{...softButtonStyle, padding: '5px 8px'}}>复制路径</button>
                 <span style={{color: '#6d7890', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{item.url}</span>
                 <span style={{marginLeft: 'auto', color: '#8a93a0'}}>{formatBytes(item.bytes)}</span>
               </div>
@@ -667,6 +826,32 @@ export const App: React.FC = () => {
 
   const settingsView = (
     <div style={{padding: 24, overflow: 'auto', flex: 1}}>
+      <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 18, maxWidth: 900, marginBottom: 16}}>
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+          <div>
+            <h2 style={{fontSize: 22, margin: '0 0 6px'}}>目录设置</h2>
+            <div style={{fontSize: 13, color: '#6d7890'}}>当前版本固定托管素材目录与输出目录，避免暴露任意本地文件。</div>
+          </div>
+          <button type="button" onClick={loadSettings} disabled={!apiOk} style={{...softButtonStyle, background: '#fff'}}>刷新目录</button>
+        </div>
+        <div style={{display: 'grid', gap: 8, marginTop: 14}}>
+          {[
+            ['书籍封面', settings?.directories?.materials?.covers],
+            ['背景图', settings?.directories?.materials?.backgrounds],
+            ['开场视频', settings?.directories?.materials?.introVideos],
+            ['背景音乐', settings?.directories?.materials?.audio],
+            ['生成输出', settings?.directories?.output],
+          ].map(([label, value]) => (
+            <div key={label} style={{display: 'grid', gridTemplateColumns: '90px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', fontSize: 13, borderBottom: '1px solid #eef1f5', padding: '7px 0'}}>
+              <span style={{fontWeight: 700}}>{label}</span>
+              <span title={String(value || '')} style={{color: '#6d7890', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{value || '等待本地服务'}</span>
+              <button type="button" onClick={() => value && copyText(String(value))} disabled={!value} style={{...softButtonStyle, padding: '5px 9px'}}>复制</button>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize: 12, color: '#8a93a0', marginTop: 12}}>系统打开目录属于桌面客户端能力；Web 模式下先提供复制路径和浏览器链接。</div>
+      </section>
+
       <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 18, maxWidth: 900}}>
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div>
@@ -683,6 +868,33 @@ export const App: React.FC = () => {
       </section>
     </div>
   );
+
+  const assetChooserView = assetChooser ? (
+    <div style={{position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(8, 13, 28, 0.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24}}>
+      <div style={{width: 'min(960px, 92vw)', maxHeight: '84vh', background: '#fff', border: '1px solid #d7deea', boxShadow: '0 20px 70px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column'}}>
+        <div style={{display: 'flex', alignItems: 'center', gap: 12, padding: 16, borderBottom: '1px solid #e5eaf3'}}>
+          <div>
+            <h2 style={{fontSize: 20, margin: 0}}>选择{assetChooser.title}</h2>
+            <div style={{fontSize: 12, color: '#6d7890', marginTop: 4}}>点击缩略图即可应用到当前素材位。</div>
+          </div>
+          <button type="button" onClick={() => { assetChooser.onSelect(''); setAssetChooser(null); }} style={{...softButtonStyle, marginLeft: 'auto'}}>清空当前</button>
+          <button type="button" onClick={() => setAssetChooser(null)} style={{...softButtonStyle, background: '#fff'}}>关闭</button>
+        </div>
+        <div style={{padding: '14px 16px 0'}}>
+          <input style={inputStyle} value={assetSearch} onChange={(e) => setAssetSearch(e.target.value)} placeholder="搜索素材名称或路径" />
+        </div>
+        <div style={{padding: 16, overflow: 'auto'}}>
+          {filteredAssetItems(assetChooser.kind).length === 0 ? (
+            <div style={{height: 180, border: '1px dashed #ccd5e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a93a0'}}>暂无可选素材，请先到素材库上传。</div>
+          ) : (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12}}>
+              {filteredAssetItems(assetChooser.kind).map((item) => assetCard(item, {compact: true, selectable: true}))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   const batchView = (
     <div style={{padding: 24, width: '100%', maxWidth: 960, margin: '0 auto', boxSizing: 'border-box'}}>
@@ -822,7 +1034,7 @@ export const App: React.FC = () => {
         <div style={{marginTop: 'auto', fontSize: 13, lineHeight: 1.9}}>
           <div style={{color: '#9fc5ff'}}>当前状态</div>
           <div style={{fontWeight: 700}}>{apiOk ? '本地服务运行中' : '等待本地服务'}</div>
-          <div style={{color: '#9aa7d7'}}>v0.2.1</div>
+          <div style={{color: '#9aa7d7'}}>v0.3.0</div>
         </div>
       </aside>
 
@@ -1047,6 +1259,7 @@ export const App: React.FC = () => {
         {settingsView}
       </div>
       </main>
+      {assetChooserView}
     </div>
   );
 };
