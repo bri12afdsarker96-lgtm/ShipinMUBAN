@@ -76,7 +76,9 @@ export const runBatch = async ({rows, root, assets, browserExecutable, concurren
       try {
         onProgress({...base, status: 'rendering'});
 
-        const outputPath = path.join(outDir, `${job.id}.mp4`);
+        // 纵深防御：文件名再过滤路径字符，并以 index 保证唯一（防同 id 互相覆盖）。
+        const safeName = String(job.id).replace(/[^a-zA-Z0-9一-龥_-]+/g, '-') || 'video';
+        const outputPath = path.join(outDir, `${safeName}-${index}.mp4`);
         const started = Date.now();
         const inputProps = {...job.config, template: job.template, audio: job.audio};
         const result = await renderJob({serveUrl, inputProps, outputPath, browserExecutable, retries});

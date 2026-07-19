@@ -149,9 +149,17 @@ const buildBeats = (row) => {
   };
 };
 
+// 清理 id：只保留字母数字/中文/下划线/连字符，去掉 . / \ 等路径危险字符，
+// 防止批量输出文件名 `${id}.mp4` 越出输出目录（路径遍历）。
+const sanitizeId = (value) =>
+  String(value)
+    .replace(/[^a-zA-Z0-9一-龥_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'video';
+
 /** 行 → {id, template, beats, config:{books, subtitles, intro}}。 */
 export const rowToConfig = (row, index) => {
-  const id = String(row.id || row.slug || `video-${String(index + 1).padStart(2, '0')}`);
+  const id = sanitizeId(row.id || row.slug || `video-${String(index + 1).padStart(2, '0')}`);
   return {
     id,
     template: row.template || 'classic',

@@ -196,6 +196,22 @@ a3476f4 阶段三：编辑器本地服务版
 - `CoverImage` 约定路径恒非空 → 每帧一次失败图片请求，可改 `calculateMetadata` 期文件预检（"缺封面不中断"已实测保证）。
 - WAV 少数格式边界（64-bit float / EXTENSIBLE）、`renderJob` 无退避重试、真实封面下载受本环境网络策略未实测、瞬态检测对氛围乐偏稀疏、GUI 内联样式无响应式、桌面封装。
 
+## 6b. 第二轮独立反查回修（合并前硬伤）
+
+第一轮我曾声称「`parseBooksConfig` 改为降级」，但该 Edit **实际漏发、实测仍会崩服务**——
+经独立反查暴露。本轮已真正修复以下三项并逐一实测：
+
+- **`books` 非对象崩服务**（P1，硬伤）：`configSchema.parseBooksConfig` 上轮仍是 `throw`，
+  向 `/api/render` 发 `{"books":"bad"}` 会让渲染进程崩（Target closed）。现改为告警降级，
+  实测返回 200 降级出片、服务存活。
+- **批量 `id` 路径遍历 + 同名覆盖**（P1，硬伤）：`row-to-config` 增 `sanitizeId`（去 `. / \`），
+  `run-batch` 文件名再过滤并以 `index` 去重。实测 `..\escape` → `escape-0.mp4` 落在 job 目录内、
+  两条 `dup` → `dup-1/dup-2` 不覆盖。
+- **413 不稳定**（P2）：`readBody` 由 `req.destroy()` 改为 `req.pause()` + 受控 reject，
+  实测 5MB body 稳定返回 413 JSON、服务存活。
+
+**教训**：跨多文件批量修改时，声称的改动必须逐一回读/实测确认落地，不能凭计划清单汇报。
+
 ## 7. 后续建议（优先级）
 
 1. 服务端路径校验加固 + 批量历史持久化（低成本、直接提升健壮性）。

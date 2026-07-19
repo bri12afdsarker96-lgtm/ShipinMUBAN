@@ -219,7 +219,8 @@ const parseMainBook = (raw: unknown): MainBookRef => {
 
 export const parseBooksConfig = (raw: unknown): BooksConfig => {
   if (!isObject(raw)) {
-    throw new Error('[config] books 配置必须是对象');
+    console.warn('[config] books 配置不是对象，已回退到空书单 + 占位主书');
+    return {flashCutFrames: [], flashBooks: [], mainBook: parseMainBook(undefined)};
   }
   const flashCutFrames = Array.isArray(raw.flashCutFrames)
     ? raw.flashCutFrames.filter((f): f is number => typeof f === 'number' && Number.isFinite(f))

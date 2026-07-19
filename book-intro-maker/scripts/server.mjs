@@ -59,16 +59,22 @@ const readBody = (req) =>
   new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let aborted = false;
     req.on('data', (c) => {
+      if (aborted) return;
       size += c.length;
       if (size > MAX_BODY) {
-        req.destroy();
+        aborted = true;
+        // 暂停接收但不销毁 socket，让上层能正常回 413（destroy 会让客户端只收到连接失败）。
+        req.pause();
         reject(Object.assign(new Error('请求体过大'), {statusCode: 413}));
         return;
       }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => {
+      if (!aborted) resolve(Buffer.concat(chunks).toString('utf8'));
+    });
     req.on('error', reject);
   });
 
