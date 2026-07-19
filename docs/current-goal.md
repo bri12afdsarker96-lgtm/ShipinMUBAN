@@ -6,6 +6,8 @@
 
 把 ShipinMUBAN 从“阶段三功能候选分支”推进到“可合并、可验收、可继续产品化”的稳定基线。
 
+全项目复盘和完整阶段路线见 `docs/project-review-and-stage-roadmap.md`。
+
 ## 当前阶段判定
 
 项目当前处在 **阶段三 Beta / 合并前产品化候选分支**。
