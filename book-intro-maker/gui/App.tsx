@@ -22,6 +22,7 @@ type Form = {
   mainZh: string;
   mainEn: string;
   flashBooksText: string;
+  flashCutFramesText: string;
   introMode: 'generated' | 'video';
   showSubtitles: boolean;
   subZh: string;
@@ -37,6 +38,7 @@ const INITIAL: Form = {
   mainZh: '满地都是六便士，他却抬头看见了月亮',
   mainEn: 'Everyone has sixpence, he looked up at the moon',
   flashBooksText: ['了不起的盖茨比 | 菲茨杰拉德', '简爱 | 夏洛蒂', '瓦尔登湖 | 梭罗', '傲慢与偏见 | 奥斯汀', '白鲸 | 麦尔维尔'].join('\n'),
+  flashCutFramesText: '',
   introMode: 'generated',
   showSubtitles: true,
   subZh: '今天推荐五本世界名著',
@@ -63,6 +65,15 @@ const defaultCutFrames = (count: number): number[] => {
   return Array.from({length: beats}, (_, i) => start + i * beat);
 };
 
+const parseFrameList = (value: string): number[] | null => {
+  const frames = value
+    .split(/[\s,，;；]+/)
+    .map((item) => Number(item.trim()))
+    .filter((n) => Number.isFinite(n) && n >= 0)
+    .map((n) => Math.round(n));
+  return frames.length > 0 ? Array.from(new Set(frames)).sort((a, b) => a - b) : null;
+};
+
 const buildRaw = (form: Form): RawConfigInput => {
   const flashBooks = form.flashBooksText
     .split('\n')
@@ -81,7 +92,7 @@ const buildRaw = (form: Form): RawConfigInput => {
     template: form.template,
     audio: form.audio || undefined,
     books: {
-      flashCutFrames: defaultCutFrames(flashBooks.length),
+      flashCutFrames: parseFrameList(form.flashCutFramesText) || defaultCutFrames(flashBooks.length),
       flashBooks,
       mainBook: {
         title: form.mainTitle,
@@ -131,6 +142,7 @@ const initialForm = (): Form => {
     mainTitle: p.get('title') || INITIAL.mainTitle,
     mainAuthor: p.get('author') || INITIAL.mainAuthor,
     mainCoverPath: p.get('cover') || INITIAL.mainCoverPath,
+    flashCutFramesText: p.get('cuts') || INITIAL.flashCutFramesText,
     mainZh: p.get('zh') || INITIAL.mainZh,
     mainEn: p.get('en') || INITIAL.mainEn,
   };
@@ -155,6 +167,7 @@ export const App: React.FC = () => {
   const [apiOk, setApiOk] = useState(false);
   const [render, setRender] = useState<{status: 'idle' | 'rendering' | 'done' | 'error'; url?: string; error?: string}>({status: 'idle'});
   const [upload, setUpload] = useState<{status: 'idle' | 'uploading' | 'done' | 'error'; error?: string}>({status: 'idle'});
+  const [beats, setBeats] = useState<{status: 'idle' | 'detecting' | 'done' | 'error'; count?: number; error?: string}>({status: 'idle'});
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
@@ -192,6 +205,28 @@ export const App: React.FC = () => {
       setUpload({status: 'done'});
     } catch (error) {
       setUpload({status: 'error', error: String(error)});
+    }
+  };
+
+  const detectBeats = async () => {
+    if (!apiOk) {
+      setBeats({status: 'error', error: '本地服务未连接'});
+      return;
+    }
+    setBeats({status: 'detecting'});
+    try {
+      const res = await fetch('/api/beats/detect', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({audio: form.audio, start: 4, end: 7, max: 14, fps: FPS}),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '卡点失败');
+      const frames = Array.isArray(data.flashCutFrames) ? data.flashCutFrames : [];
+      set('flashCutFramesText', frames.join(', '));
+      setBeats({status: 'done', count: frames.length});
+    } catch (error) {
+      setBeats({status: 'error', error: String(error)});
     }
   };
 
@@ -335,6 +370,16 @@ export const App: React.FC = () => {
         </Field>
         <Field label="背景音乐（相对 public / 或 asset 引用）">
           <input style={inputStyle} value={form.audio} onChange={(e) => set('audio', e.target.value)} />
+        </Field>
+        <Field label="快闪切点帧">
+          <div style={{display: 'flex', gap: 8}}>
+            <input style={{...inputStyle, flex: 1}} value={form.flashCutFramesText} onChange={(e) => set('flashCutFramesText', e.target.value)} placeholder="134, 142, 146..." />
+            <button type="button" onClick={detectBeats} disabled={!apiOk || beats.status === 'detecting'} style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+              {beats.status === 'detecting' ? '检测中' : '自动卡点'}
+            </button>
+          </div>
+          {beats.status === 'done' ? <div style={{fontSize: 12, color: '#16a34a', marginTop: 6}}>已生成 {beats.count} 个切点</div> : null}
+          {beats.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginTop: 6}}>{beats.error}</div> : null}
         </Field>
 
         <Field label="主书 · 书名">

@@ -17,6 +17,8 @@ import process from 'node:process';
 import {getBundle, renderJob} from './batch/lib/render-core.mjs';
 import {runBatch} from './batch/lib/run-batch.mjs';
 import {loadAssets} from './lib/assets.mjs';
+import {decodeWav} from './lib/audio/wav.mjs';
+import {detectOnsets, onsetsToFrames} from './lib/audio/onset.mjs';
 
 const root = process.cwd();
 const assets = loadAssets(path.join(process.cwd(), 'config', 'assets.example.json'));
@@ -310,6 +312,55 @@ const handleAssetUpload = async (req, res) => {
   return sendJson(res, 200, {ok: true, kind, path: assetPath, url: `/${assetPath}`, bytes: buffer.length, mime});
 };
 
+const refId = (value) => (typeof value === 'string' && value.startsWith('asset:') ? value.slice('asset:'.length) : null);
+
+const resolvePublicAssetPath = (raw, category) => {
+  let value = String(raw || '').trim();
+  const id = refId(value);
+  if (id) {
+    const entry = assets?.[category]?.[id];
+    value = typeof entry === 'string' ? entry : entry?.path || '';
+  }
+  if (!value || /^(https?:|data:|blob:)/i.test(value)) return null;
+  const clean = value.replace(/^public[\\/]/, '').replace(/^\/+/, '');
+  const full = withinBase(publicDir, path.join(publicDir, clean));
+  return full && existsSync(full) ? full : null;
+};
+
+const handleBeatsDetect = async (req, res) => {
+  const body = await readJson(req);
+  const audioPath = resolvePublicAssetPath(body.audio || 'sample-beat.wav', 'audio');
+  if (!audioPath) return sendJson(res, 400, {ok: false, error: '音频不存在或不支持远程音频'});
+
+  const fps = Number(body.fps) || 30;
+  const start = body.start == null ? 4 : Number(body.start);
+  const end = body.end == null ? 7 : Number(body.end);
+  const max = body.max == null ? 14 : Number(body.max);
+  const minGap = body.minGap == null ? 0.12 : Number(body.minGap);
+  const sensitivity = body.sensitivity == null ? 1.5 : Number(body.sensitivity);
+
+  const {sampleRate, samples, duration} = decodeWav(await readFile(audioPath));
+  let onsets = detectOnsets(samples, sampleRate, {sensitivity, minGapSec: minGap});
+  if (Number.isFinite(start)) onsets = onsets.filter((o) => o.time >= start);
+  if (Number.isFinite(end)) onsets = onsets.filter((o) => o.time <= end);
+  if (Number.isFinite(max) && max > 0 && onsets.length > max) {
+    onsets = [...onsets].sort((x, y) => y.strength - x.strength).slice(0, max);
+  }
+  onsets.sort((x, y) => x.time - y.time);
+
+  const flashCutFrames = Array.from(new Set(onsetsToFrames(onsets, fps))).sort((x, y) => x - y);
+  const times = onsets.map((o) => Number(o.time.toFixed(3)));
+  return sendJson(res, 200, {
+    ok: true,
+    audio: path.relative(publicDir, audioPath),
+    duration,
+    fps,
+    flashCutFrames,
+    times,
+    count: flashCutFrames.length,
+  });
+};
+
 const server = createServer(async (req, res) => {
   try {
     // 防 DNS-rebinding：只接受本机 Host，挡住外部域名指向 127.0.0.1 的浏览器请求。
@@ -328,6 +379,7 @@ const server = createServer(async (req, res) => {
     if (url === '/api/health') return sendJson(res, 200, {ok: true});
     if (url === '/api/assets') return await handleAssets(res);
     if (url === '/api/assets/upload' && req.method === 'POST') return await handleAssetUpload(req, res);
+    if (url === '/api/beats/detect' && req.method === 'POST') return await handleBeatsDetect(req, res);
     if (url.startsWith('/api/renders')) return await handleRenders(res);
     if (url === '/api/render' && req.method === 'POST') return await handleRender(req, res);
     if (url === '/api/batches') return await handleBatchesList(res);
