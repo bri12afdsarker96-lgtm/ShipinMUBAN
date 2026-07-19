@@ -4,7 +4,7 @@
 // 底部导出可直接喂给批量引擎的配置 JSON。复用渲染层的 propsFromRaw / durationForProps
 // 与模板注册表，界面与渲染保持一致。
 
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Player} from '@remotion/player';
 import {BookIntroFromConfig} from '../src/BookIntroFromConfig';
 import {durationForProps, propsFromRaw} from '../src/config';
@@ -123,6 +123,26 @@ export const App: React.FC = () => {
     navigator.clipboard?.writeText(exportJson).catch(() => undefined);
   };
 
+  // 本地服务：探活 + 一键渲染 MP4。纯静态打开时按钮不可用。
+  const [apiOk, setApiOk] = useState(false);
+  const [render, setRender] = useState<{status: 'idle' | 'rendering' | 'done' | 'error'; url?: string; error?: string}>({status: 'idle'});
+  useEffect(() => {
+    fetch('/api/health')
+      .then((r) => setApiOk(r.ok))
+      .catch(() => setApiOk(false));
+  }, []);
+  const renderNow = async () => {
+    setRender({status: 'rendering'});
+    try {
+      const res = await fetch('/api/render', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id: form.mainTitle, ...raw})});
+      const data = await res.json();
+      if (data.ok) setRender({status: 'done', url: data.url});
+      else setRender({status: 'error', error: data.error || '渲染失败'});
+    } catch (e) {
+      setRender({status: 'error', error: String(e)});
+    }
+  };
+
   return (
     <div style={{display: 'flex', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#1b2430'}}>
       {/* 编辑面板 */}
@@ -199,9 +219,34 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* 导出 */}
+      {/* 渲染 + 导出 */}
       <div style={{width: 320, padding: '20px 18px', borderLeft: '1px solid #e6eaf0', background: '#f7f9fc', display: 'flex', flexDirection: 'column'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <h2 style={{fontSize: 15, margin: '0 0 8px'}}>渲染 MP4</h2>
+        {apiOk ? (
+          <button
+            id="render-btn"
+            onClick={renderNow}
+            disabled={render.status === 'rendering'}
+            style={{padding: '9px 12px', border: 'none', borderRadius: 8, background: render.status === 'rendering' ? '#9bb4e8' : '#16a34a', color: '#fff', fontSize: 14, cursor: 'pointer', fontWeight: 600}}
+          >
+            {render.status === 'rendering' ? '渲染中…（约 15s）' : '渲染此配置为 MP4'}
+          </button>
+        ) : (
+          <div style={{fontSize: 12, color: '#8a93a0', lineHeight: 1.6}}>
+            未连接本地服务。运行 <code>npm run gui:build</code> 后 <code>node scripts/server.mjs</code>，用 :4000 打开即可一键渲染。
+          </div>
+        )}
+        {render.status === 'done' && render.url ? (
+          <div id="render-result" style={{marginTop: 12}}>
+            <video src={render.url} controls style={{width: '100%', borderRadius: 8, background: '#000'}} />
+            <a href={render.url} download style={{fontSize: 13, color: '#2f6bff'}}>
+              下载 MP4
+            </a>
+          </div>
+        ) : null}
+        {render.status === 'error' ? <div style={{marginTop: 10, fontSize: 12, color: '#d33'}}>渲染失败：{render.error}</div> : null}
+
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20}}>
           <h2 style={{fontSize: 15, margin: 0}}>导出配置</h2>
           <button id="copy-btn" onClick={copyExport} style={{padding: '6px 12px', border: 'none', borderRadius: 8, background: '#2f6bff', color: '#fff', fontSize: 13, cursor: 'pointer'}}>
             复制

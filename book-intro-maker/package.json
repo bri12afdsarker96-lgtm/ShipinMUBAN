@@ -10,7 +10,8 @@
     "beats": "node scripts/detect-beats.mjs",
     "batch": "node scripts/batch/render-batch.mjs",
     "gui": "node scripts/build-gui.mjs --serve",
-    "gui:build": "node scripts/build-gui.mjs"
+    "gui:build": "node scripts/build-gui.mjs",
+    "server": "node scripts/server.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.490",

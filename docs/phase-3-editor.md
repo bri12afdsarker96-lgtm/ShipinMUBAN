@@ -4,11 +4,21 @@
 
 ## 运行
 
+两种模式：
+
 ```bash
 cd book-intro-maker
-npm.cmd run gui          # 起本地编辑器，默认 http://127.0.0.1:5173
-npm.cmd run gui:build    # 打包到 gui/dist（可静态托管）
+
+# A. 纯前端（仅编辑 + 预览 + 导出配置）
+npm.cmd run gui          # esbuild 起编辑器，默认 http://127.0.0.1:5173
+
+# B. 本地服务版（额外支持界面内一键渲染 MP4）
+npm.cmd run gui:build    # 先打包前端到 gui/dist
+npm.cmd run server       # 起本地服务，打开 http://127.0.0.1:4000
 ```
+
+本地服务版托管前端 + 静态素材（`public`，让预览用上真实音频/封面）+ 渲染产物（`out`），
+并提供渲染 API。
 
 ## 界面
 
@@ -29,6 +39,21 @@ npm.cmd run gui:build    # 打包到 gui/dist（可静态托管）
   `durationForProps`、模板注册表都直接 import 自 `src/`，界面所见即渲染所得。
 - 表单 → 原始三件套配置 → `Player` 的 `inputProps`，与批量引擎的数据结构完全一致。
 
+## 本地服务 API
+
+`scripts/server.mjs`（Node 原生 http，无框架依赖）：
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/health` | 探活（前端据此显示渲染按钮） |
+| `POST /api/render` | 渲染当前配置（原始三件套 + template/audio）为 MP4，返回可播放 url |
+| `GET /api/renders` | 列出已渲染产物 |
+| `GET /api/assets` | 素材库清单 |
+| 静态 | `gui/dist`（前端）、`public`（音频/封面）、`out`（产物） |
+
+渲染复用 `scripts/batch/lib/render-core.mjs`（打包缓存 + `renderJob`），与批量引擎同一套核心。
+渲染产物写到 `out/editor/`（不进仓库）。
+
 ## 与批量引擎的关系
 
 ```text
@@ -39,6 +64,7 @@ npm.cmd run gui:build    # 打包到 gui/dist（可静态托管）
 
 ## 后续
 
-- 本地服务版：读写素材库与配置文件、直接触发批量渲染、渲染队列进度。
-- 封面查询、自动卡点在界面内一键调用。
+- 界面内读写批量数据文件、封面查询/自动卡点一键调用、渲染队列进度面板。
 - 桌面封装（Electron / Tauri）。
+
+已实现：可视化编辑 + 实时预览、导出配置、本地服务版一键渲染 MP4。

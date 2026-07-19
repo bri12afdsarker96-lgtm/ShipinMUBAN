@@ -106,13 +106,14 @@ node scripts/detect-beats.mjs --audio public/sample-beat.wav --start 4 --end 7 -
 ## 可视化编辑器
 
 ```bash
-npm.cmd run gui          # 起本地编辑器 http://127.0.0.1:5173
-npm.cmd run gui:build    # 打包到 gui/dist
+npm.cmd run gui                      # 纯前端编辑器 http://127.0.0.1:5173
+npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1:4000（可一键渲染 MP4）
 ```
 
 纯前端 React + `@remotion/player`：左侧表单编辑模板/主书/书单/字幕/音乐，中间**实时预览**，
 右侧**导出配置 JSON** 直接喂给批量引擎。复用渲染层的 `propsFromRaw`/模板注册表，所见即所得。
-支持 `?template=&title=` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
+**本地服务版**额外支持界面内**一键渲染 MP4**（`POST /api/render`，复用批量渲染核心），并让预览
+用上真实音频/封面。支持 `?template=&title=` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
 
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 

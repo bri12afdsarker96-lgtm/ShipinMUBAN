@@ -21,8 +21,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {mkdir, writeFile, stat} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import {bundle} from '@remotion/bundler';
-import {renderMedia, selectComposition} from '@remotion/renderer';
+import {getBundle, renderJob} from './lib/render-core.mjs';
 import {parseInputFile} from './lib/parse-input.mjs';
 import {rowToConfig} from './lib/row-to-config.mjs';
 import {runPool} from './lib/pool.mjs';
@@ -30,8 +29,6 @@ import {runQc, runPostQc} from './lib/qc.mjs';
 import {decodeWav} from '../lib/audio/wav.mjs';
 import {detectCutFrames} from '../lib/audio/onset.mjs';
 import {loadAssets, resolveAssetsInJob} from '../lib/assets.mjs';
-
-const COMPOSITION_ID = 'BookIntroFromConfig';
 
 const parseArgs = (argv) => {
   const args = {out: 'out/batch', concurrency: 1, retries: 2, dry: false};
@@ -51,36 +48,9 @@ const parseArgs = (argv) => {
 
 const timestampId = () => new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 
-const renderOne = async ({serveUrl, job, outputPath, browserExecutable, retries}) => {
-  let lastError = null;
+const renderOne = ({serveUrl, job, outputPath, browserExecutable, retries}) =>
   // 模板 id、背景音乐随 inputProps 一起传入渲染。
-  const inputProps = {...job.config, template: job.template, audio: job.audio};
-  for (let attempt = 1; attempt <= retries + 1; attempt++) {
-    try {
-      const composition = await selectComposition({
-        serveUrl,
-        id: COMPOSITION_ID,
-        inputProps,
-        browserExecutable,
-      });
-      await renderMedia({
-        serveUrl,
-        composition,
-        codec: 'h264',
-        outputLocation: outputPath,
-        inputProps,
-        browserExecutable,
-      });
-      return {ok: true, attempts: attempt};
-    } catch (error) {
-      lastError = error;
-      if (attempt <= retries) {
-        console.warn(`  [${job.id}] 第 ${attempt} 次渲染失败，重试：${error.message}`);
-      }
-    }
-  }
-  return {ok: false, attempts: retries + 1, error: lastError?.message || String(lastError)};
-};
+  renderJob({serveUrl, inputProps: {...job.config, template: job.template, audio: job.audio}, outputPath, browserExecutable, retries});
 
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -150,10 +120,7 @@ const main = async () => {
   let serveUrl = null;
   if (!args.dry) {
     console.log('打包 Remotion 项目…');
-    serveUrl = await bundle({
-      entryPoint: path.join(root, 'src', 'index.ts'),
-      publicDir: path.join(root, 'public'),
-    });
+    serveUrl = await getBundle(root);
   }
 
   // 4. 队列渲染 + 渲染后质检。
