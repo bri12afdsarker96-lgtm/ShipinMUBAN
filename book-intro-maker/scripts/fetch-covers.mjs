@@ -1,105 +1,49 @@
+// 真实书封查询与缓存脚本。
+//
+// 策略（与 docs/phase-2-spec.md 一致）：
+//   1. 配置有 coverPath  -> 直接用本地覆盖。
+//   2. 目标文件已缓存      -> 跳过联网（可重复运行，不重复下载）。
+//   3. 有 isbn            -> 优先按 ISBN 查（Open Library 加 default=false 避免空白占位图）。
+//   4. 否则               -> 用 coverQuery 或「书名 + 作者」查。
+//   5. Open Library 优先，Google Books 补充。
+//   6. 都找不到           -> 标记 placeholder，交给模板降级为生成式封面，绝不中断。
+//
+// 输出解析后的 config/books.resolved.json，供下游/产品阶段使用。
+// 用法：
+//   node scripts/fetch-covers.mjs            正常运行（利用缓存）
+//   node scripts/fetch-covers.mjs --force    忽略缓存，强制重新下载
+
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import {resolveBooksConfigCovers} from './lib/covers.mjs';
 
 const root = process.cwd();
 const configPath = path.join(root, 'config', 'books.example.json');
 const coversDir = path.join(root, 'public', 'covers');
 const outputPath = path.join(root, 'config', 'books.resolved.json');
 
-const slug = (value) =>
-  String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-
-const fetchJson = async (url) => {
-  const response = await fetch(url, {headers: {'user-agent': 'ShipinMUBAN/0.1'}});
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-  return response.json();
-};
-
-const findOpenLibraryCover = async (book) => {
-  if (book.isbn) {
-    return `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(book.isbn)}-L.jpg`;
-  }
-
-  const query = new URLSearchParams({
-    title: book.title,
-    author: book.author || '',
-    limit: '1',
-  });
-  const data = await fetchJson(`https://openlibrary.org/search.json?${query}`);
-  const first = data.docs?.[0];
-  if (first?.cover_i) {
-    return `https://covers.openlibrary.org/b/id/${first.cover_i}-L.jpg`;
-  }
-  return null;
-};
-
-const findGoogleBooksCover = async (book) => {
-  const q = book.isbn ? `isbn:${book.isbn}` : `${book.title} ${book.author || ''}`;
-  const query = new URLSearchParams({q, maxResults: '1'});
-  const data = await fetchJson(`https://www.googleapis.com/books/v1/volumes?${query}`);
-  const links = data.items?.[0]?.volumeInfo?.imageLinks;
-  return links?.extraLarge || links?.large || links?.medium || links?.thumbnail || null;
-};
-
-const download = async (url, filePath) => {
-  const response = await fetch(url, {headers: {'user-agent': 'ShipinMUBAN/0.1'}});
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await writeFile(filePath, buffer);
-};
-
-const resolveBook = async (book) => {
-  if (book.coverPath) {
-    return {...book, resolvedCoverPath: book.coverPath, coverSource: 'local'};
-  }
-
-  const fileName = `${slug(book.isbn || `${book.title}-${book.author || ''}`)}.jpg`;
-  const localPath = path.join(coversDir, fileName);
-  const publicPath = `covers/${fileName}`;
-
-  const attempts = [
-    ['open-library', () => findOpenLibraryCover(book)],
-    ['google-books', () => findGoogleBooksCover(book)],
-  ];
-
-  for (const [source, getter] of attempts) {
-    try {
-      const url = await getter();
-      if (!url) {
-        continue;
-      }
-      await download(url, localPath);
-      return {...book, resolvedCoverPath: publicPath, coverSource: source, coverUrl: url};
-    } catch (error) {
-      console.warn(`[cover] ${book.title}: ${source} failed: ${error.message}`);
-    }
-  }
-
-  return {...book, resolvedCoverPath: null, coverSource: 'placeholder'};
-};
+const FORCE = process.argv.includes('--force');
 
 const main = async () => {
   await mkdir(coversDir, {recursive: true});
   const config = JSON.parse(await readFile(configPath, 'utf8'));
-  const flashBooks = [];
+  const resolved = await resolveBooksConfigCovers(config, {
+    coversDir,
+    force: FORCE,
+    log: console.log,
+    warn: console.warn,
+  });
 
-  for (const book of config.flashBooks || []) {
-    flashBooks.push(await resolveBook(book));
-  }
-
-  const mainBook = config.mainBook ? await resolveBook(config.mainBook) : null;
-  const resolved = {...config, flashBooks, mainBook};
   await writeFile(outputPath, `${JSON.stringify(resolved, null, 2)}\n`, 'utf8');
-  console.log(`Wrote ${outputPath}`);
+
+  const all = [...(resolved.flashBooks || []), ...(resolved.mainBook ? [resolved.mainBook] : [])];
+  const counts = all.reduce((acc, b) => {
+    acc[b.coverSource] = (acc[b.coverSource] || 0) + 1;
+    return acc;
+  }, {});
+  console.log(`\n完成：${outputPath}`);
+  console.log(`统计：${JSON.stringify(counts)}`);
 };
 
 main().catch((error) => {

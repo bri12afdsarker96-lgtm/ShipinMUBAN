@@ -1,0 +1,188 @@
+// 把批量数据行映射成二阶段的「原始三件套配置」{books, subtitles, intro}。
+//
+// 支持两种写法：
+//   1. 结构化：行对象直接带 books / subtitles / intro 键（JSON 输入常用）。
+//   2. 扁平字段：用下列列名（CSV 输入常用），本模块负责拼装。
+//
+// 扁平字段列名：
+//   id
+//   mainTitle, mainAuthor, mainIsbn, mainCover, mainBackground, mainZh, mainEn
+//   flashBooks       "书名~作者~isbn~封面 | 书名~作者~isbn~封面 | ..."（作者/isbn/封面可省略）
+//   flashCutFrames   "134|139|144|..."（可选，省略则按默认节奏自动生成）
+//   introMode(video|generated), introVideo, introTrimStart, introTrimEnd,
+//   introBackground, introBrand, introVolume, introMuted, showSubtitles
+//   flashBackground
+//   subtitles        "开始帧~结束帧~中文~英文~位置 ; ..."（可选）
+
+const toBool = (value, fallback = false) => {
+  if (typeof value === 'boolean') return value;
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value).toLowerCase());
+};
+
+const toNumber = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const nullableStr = (value) => {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  return s === '' ? null : s;
+};
+
+/** 自动卡点：按默认节奏生成快闪切点。最后一个切点即主书进入帧。 */
+export const defaultCutFrames = (count, {start = 134, beat = 5} = {}) => {
+  const beats = Math.max(count, 3) + 1;
+  return Array.from({length: beats}, (_, i) => start + i * beat);
+};
+
+const parseFlashBooks = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (!value) {
+    return [];
+  }
+  return String(value)
+    .split('|')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const [title, author, isbn, coverPath] = entry.split('~').map((s) => s.trim());
+      return {
+        title: title || '未命名',
+        author: author || undefined,
+        isbn: isbn || null,
+        coverPath: coverPath || null,
+      };
+    });
+};
+
+const parseSubtitleTracks = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value && typeof value === 'object' && Array.isArray(value.tracks)) {
+    return value.tracks;
+  }
+  if (!value) {
+    return [];
+  }
+  return String(value)
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry, index) => {
+      const [start, end, zh, en, position] = entry.split('~').map((s) => (s ?? '').trim());
+      return {
+        id: `sub-${index + 1}`,
+        startFrame: toNumber(start, 0),
+        endFrame: toNumber(end, toNumber(start, 0) + 30),
+        zh: zh || undefined,
+        en: en || undefined,
+        position: position || 'lower',
+      };
+    });
+};
+
+const buildBooks = (row) => {
+  if (row.books && typeof row.books === 'object') {
+    return row.books;
+  }
+  const flashBooks = parseFlashBooks(row.flashBooks);
+  let flashCutFrames = row.flashCutFrames
+    ? String(row.flashCutFrames)
+        .split('|')
+        .map((n) => toNumber(n, null))
+        .filter((n) => n !== null)
+    : defaultCutFrames(flashBooks.length);
+  // 显式切点全部非法（过滤后为空）时回退默认节奏，避免主书进入帧丢失。
+  if (flashCutFrames.length === 0) flashCutFrames = defaultCutFrames(flashBooks.length);
+
+  return {
+    flashCutFrames,
+    flashBooks,
+    mainBook: {
+      title: row.mainTitle || row.title || '未命名主书',
+      author: nullableStr(row.mainAuthor) || undefined,
+      isbn: nullableStr(row.mainIsbn),
+      coverPath: nullableStr(row.mainCover),
+      backgroundPath: nullableStr(row.mainBackground),
+      zhLine: nullableStr(row.mainZh) || undefined,
+      enLine: nullableStr(row.mainEn) || undefined,
+    },
+  };
+};
+
+const buildIntro = (row) => {
+  if (row.intro && typeof row.intro === 'object') {
+    return row.intro;
+  }
+  return {
+    mode: row.introMode === 'video' ? 'video' : 'generated',
+    videoPath: nullableStr(row.introVideo),
+    backgroundPath: nullableStr(row.introBackground),
+    trimStart: toNumber(row.introTrimStart, 0),
+    trimEnd: row.introTrimEnd ? toNumber(row.introTrimEnd, null) : null,
+    volume: toNumber(row.introVolume, 1),
+    muted: toBool(row.introMuted, false),
+    showSubtitles: toBool(row.showSubtitles, true),
+    brandText: row.introBrand === undefined ? undefined : String(row.introBrand),
+  };
+};
+
+const buildSubtitles = (row) => {
+  if (row.subtitles && typeof row.subtitles === 'object' && !Array.isArray(row.subtitles)) {
+    return row.subtitles;
+  }
+  return {tracks: parseSubtitleTracks(row.subtitles)};
+};
+
+// 自动卡点配置：行内指定 beatsAudio 时，批量引擎会解码该音频、检测瞬态，
+// 覆盖 flashCutFrames（检测失败或过少则保留默认节奏）。
+const buildBeats = (row) => {
+  if (!row.beatsAudio) return null;
+  return {
+    audio: String(row.beatsAudio),
+    startSec: row.beatsStart != null && row.beatsStart !== '' ? Number(row.beatsStart) : undefined,
+    endSec: row.beatsEnd != null && row.beatsEnd !== '' ? Number(row.beatsEnd) : undefined,
+    max: row.beatsMax != null && row.beatsMax !== '' ? Number(row.beatsMax) : undefined,
+    sensitivity: row.beatsSensitivity != null && row.beatsSensitivity !== '' ? Number(row.beatsSensitivity) : undefined,
+  };
+};
+
+const buildVisualAssets = (row) => {
+  if (row.visualAssets && typeof row.visualAssets === 'object' && !Array.isArray(row.visualAssets)) {
+    return row.visualAssets;
+  }
+  return {
+    flashBackgroundPath: nullableStr(row.flashBackground),
+  };
+};
+
+// 清理 id：只保留字母数字/中文/下划线/连字符，去掉 . / \ 等路径危险字符，
+// 防止批量输出文件名 `${id}.mp4` 越出输出目录（路径遍历）。
+const sanitizeId = (value) =>
+  String(value)
+    .replace(/[^a-zA-Z0-9一-龥_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'video';
+
+/** 行 → {id, template, beats, config:{books, subtitles, intro}}。 */
+export const rowToConfig = (row, index) => {
+  const id = sanitizeId(row.id || row.slug || `video-${String(index + 1).padStart(2, '0')}`);
+  return {
+    id,
+    template: row.template || 'classic',
+    audio: nullableStr(row.audio) || undefined,
+    beats: buildBeats(row),
+    config: {
+      books: buildBooks(row),
+      subtitles: buildSubtitles(row),
+      intro: buildIntro(row),
+      visualAssets: buildVisualAssets(row),
+    },
+  };
+};
