@@ -239,6 +239,7 @@ const initialForm = (): Form => {
 export const App: React.FC = () => {
   const [form, setForm] = useState<Form>(initialForm);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({...f, [key]: value}));
+  const flashBookRows = useMemo(() => parseFlashBooksText(form.flashBooksText), [form.flashBooksText]);
 
   const raw = useMemo(() => buildRaw(form), [form]);
   const duration = useMemo(() => durationForProps(propsFromRaw(raw)), [raw]);
@@ -301,6 +302,20 @@ export const App: React.FC = () => {
   const uploadToField = async <K extends keyof Form>(kind: 'covers' | 'backgrounds' | 'introVideos' | 'audio', key: K, file: File | null | undefined) => {
     const assetPath = await uploadAsset(kind, file);
     if (assetPath) set(key, assetPath as Form[K]);
+  };
+
+  const updateFlashBook = (index: number, patch: Partial<FlashBookForm>) => {
+    setForm((current) => {
+      const books = parseFlashBooksText(current.flashBooksText);
+      if (!books[index]) return current;
+      books[index] = {...books[index], ...patch};
+      return {...current, flashBooksText: formatFlashBooksText(books)};
+    });
+  };
+
+  const uploadFlashCoverAt = async (index: number, file: File | null | undefined) => {
+    const assetPath = await uploadAsset('covers', file);
+    if (assetPath) updateFlashBook(index, {coverPath: assetPath});
   };
 
   const uploadFlashCovers = async (files: FileList | null) => {
@@ -627,6 +642,27 @@ export const App: React.FC = () => {
             </label>
             <span style={{fontSize: 12, color: '#8a93a0'}}>第 1 张对应第 1 行，依次写入第三列</span>
           </div>
+          {flashBookRows.length > 0 ? (
+            <div style={{display: 'grid', gap: 8, marginTop: 10}}>
+              {flashBookRows.map((book, index) => (
+                <div key={`${book.title}-${index}`} style={{display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', padding: 8, border: '1px solid #e1e6ee', borderRadius: 8, background: '#fff'}}>
+                  <div style={{width: 52, height: 72, borderRadius: 6, overflow: 'hidden', background: '#eef2f7', border: '1px solid #d3d9e0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a93a0', fontSize: 11}}>
+                    {book.coverPath ? <img src={publicAssetUrl(book.coverPath)} alt={`${book.title}封面`} style={{width: '100%', height: '100%', objectFit: 'cover'}} /> : '封面'}
+                  </div>
+                  <div style={{minWidth: 0}}>
+                    <div style={{fontSize: 12, fontWeight: 700, color: '#1b2430', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                      {index + 1}. {book.title}
+                    </div>
+                    <input style={{...inputStyle, marginTop: 6, padding: '6px 8px', fontSize: 12}} value={book.coverPath || ''} onChange={(e) => updateFlashBook(index, {coverPath: e.target.value})} placeholder="covers/book.jpg" />
+                  </div>
+                  <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+                    上传
+                    <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadFlashCoverAt(index, e.target.files?.[0])} style={{display: 'none'}} />
+                  </label>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Field>
 
         <Field label="开场字幕 · 中文">

@@ -24,7 +24,7 @@
 | 阶段 | 状态 | 目标 | 完成标准 |
 | --- | --- | --- | --- |
 | 3E | 进行中 | 合并前验收 | CI 真跑绿；真实素材验收有记录；PR #2 可转 ready |
-| 4A | 第二版完成 | 素材管理产品化 | 界面内选择/上传封面、音乐、背景、开场视频，无需手写路径 |
+| 4A | 第二版完成，逐本封面入口补齐 | 素材管理产品化 | 界面内选择/上传封面、音乐、背景、开场视频，无需手写路径 |
 | 4B | 进行中，封面与卡点第一版完成 | 封面与卡点一键化 | 界面内触发封面查询、自动卡点，并能预览结果 |
 | 4C | 第一版完成 | 队列控制 | 支持暂停、恢复、单条重试、失败原因展示 |
 | 4D | 待立项 | 视觉验收 | 自动导出关键帧截图，便于人工检查遮挡、错位、字幕溢出 |
@@ -159,7 +159,7 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 | 项目 | 结果 |
 | --- | --- |
 | 服务端上传 | `POST /api/assets/upload` 扩展支持 `covers`、`backgrounds`、`introVideos`、`audio` |
-| 快闪书单 | 编辑器每行支持 `书名 | 作者 | 封面路径`，并可多选图片按行写入快闪封面 |
+| 快闪书单 | 编辑器每行支持 `书名 | 作者 | 封面路径`，并提供逐本封面预览、路径输入和单独上传按钮；也可多选图片按行写入快闪封面 |
 | 模板/场景背景 | 新增 `visualAssets.flashBackgroundPath`，快闪段背景可替换；主书背景写入 `books.mainBook.backgroundPath` |
 | 开场素材 | 开场视频 `intro.videoPath`、生成式开场背景 `intro.backgroundPath`、开场角标 `intro.brandText` 均可配置 |
 | 音乐素材 | 背景音乐可在界面上传到 `public/audio/`，并写入顶层 `audio` |
@@ -174,6 +174,8 @@ https://github.com/bri12afdsarker96-lgtm/ShipinMUBAN/pull/2
 - `npm.cmd run gui:build` 通过。
 - `npm.cmd test` 通过 15 项，新增覆盖背景图、音乐、开场视频上传类型。
 - 接口冒烟：上传背景图与快闪封面后，批量配置可接收 `visualAssets.flashBackgroundPath`、`books.mainBook.backgroundPath`、`intro.backgroundPath` 与快闪封面路径，质检只因故意留空主书标题而失败。
+
+补充完成：快闪书单不再只依赖文本第三列，每本书在编辑器内都有独立的封面预览、路径输入和上传入口，明确满足“快闪书单封面素材可替换”。
 
 ## 4B 第一版：界面内自动卡点
 
