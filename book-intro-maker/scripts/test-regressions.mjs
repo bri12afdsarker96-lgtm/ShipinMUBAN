@@ -87,6 +87,15 @@ const waitBatchDone = async (jobId) => {
   return null;
 };
 
+const uploadTinyAsset = async (kind, fileName, mime, base64) => {
+  const res = await fetch(`${B}/api/assets/upload`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({kind, fileName, dataUrl: `data:${mime};base64,${base64}`}),
+  });
+  return {res, data: await res.json().catch(() => ({}))};
+};
+
 const srv = spawn('node', [path.join('scripts', 'server.mjs')], {env: {...process.env, PORT: String(PORT)}, stdio: 'ignore'});
 
 try {
@@ -107,6 +116,19 @@ try {
     ok(status413 === 413, `5MB -> 413（实得 ${status413}）`);
     ok((await fetch(`${B}/api/health`)).ok, '413 后服务存活');
     ok((await fetch(`${B}/api/health`)).ok, '413 后可再次请求（连接未脏）');
+
+    // —— 集成：素材上传类型（无需渲染）——
+    console.log('集成：素材上传类型');
+    const png64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+    const bgUpload = await uploadTinyAsset('backgrounds', '../../bg.png', 'image/png', png64);
+    const audioUpload = await uploadTinyAsset('audio', 'beat.wav', 'audio/wav', 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=');
+    const introUpload = await uploadTinyAsset('introVideos', 'opening.mp4', 'video/mp4', 'AAAAFGZ0eXBpc29tAAACAGlzb20=');
+    ok(bgUpload.res.status === 200 && /^backgrounds\//.test(bgUpload.data.path || ''), '背景图可上传到 backgrounds/');
+    ok(audioUpload.res.status === 200 && /^audio\//.test(audioUpload.data.path || ''), '音乐可上传到 audio/');
+    ok(introUpload.res.status === 200 && /^intro-videos\//.test(introUpload.data.path || ''), '开场视频可上传到 intro-videos/');
+    for (const item of [bgUpload.data, audioUpload.data, introUpload.data]) {
+      if (item.path) await rm(path.join(process.cwd(), 'public', item.path), {force: true});
+    }
 
     // —— 集成：批量队列失败原因 + 单条重试入口（无需渲染）——
     console.log('集成：批量队列控制');

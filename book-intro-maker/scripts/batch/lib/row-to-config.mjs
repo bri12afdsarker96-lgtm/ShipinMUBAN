@@ -7,10 +7,11 @@
 // 扁平字段列名：
 //   id
 //   mainTitle, mainAuthor, mainIsbn, mainCover, mainBackground, mainZh, mainEn
-//   flashBooks       "书名~作者~isbn | 书名~作者~isbn | ..."（作者/isbn 可省略）
+//   flashBooks       "书名~作者~isbn~封面 | 书名~作者~isbn~封面 | ..."（作者/isbn/封面可省略）
 //   flashCutFrames   "134|139|144|..."（可选，省略则按默认节奏自动生成）
 //   introMode(video|generated), introVideo, introTrimStart, introTrimEnd,
-//   introVolume, introMuted, showSubtitles
+//   introBackground, introBrand, introVolume, introMuted, showSubtitles
+//   flashBackground
 //   subtitles        "开始帧~结束帧~中文~英文~位置 ; ..."（可选）
 
 const toBool = (value, fallback = false) => {
@@ -49,11 +50,12 @@ const parseFlashBooks = (value) => {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .map((entry) => {
-      const [title, author, isbn] = entry.split('~').map((s) => s.trim());
+      const [title, author, isbn, coverPath] = entry.split('~').map((s) => s.trim());
       return {
         title: title || '未命名',
         author: author || undefined,
         isbn: isbn || null,
+        coverPath: coverPath || null,
       };
     });
 };
@@ -121,11 +123,13 @@ const buildIntro = (row) => {
   return {
     mode: row.introMode === 'video' ? 'video' : 'generated',
     videoPath: nullableStr(row.introVideo),
+    backgroundPath: nullableStr(row.introBackground),
     trimStart: toNumber(row.introTrimStart, 0),
     trimEnd: row.introTrimEnd ? toNumber(row.introTrimEnd, null) : null,
     volume: toNumber(row.introVolume, 1),
     muted: toBool(row.introMuted, false),
     showSubtitles: toBool(row.showSubtitles, true),
+    brandText: row.introBrand === undefined ? undefined : String(row.introBrand),
   };
 };
 
@@ -149,6 +153,15 @@ const buildBeats = (row) => {
   };
 };
 
+const buildVisualAssets = (row) => {
+  if (row.visualAssets && typeof row.visualAssets === 'object' && !Array.isArray(row.visualAssets)) {
+    return row.visualAssets;
+  }
+  return {
+    flashBackgroundPath: nullableStr(row.flashBackground),
+  };
+};
+
 // 清理 id：只保留字母数字/中文/下划线/连字符，去掉 . / \ 等路径危险字符，
 // 防止批量输出文件名 `${id}.mp4` 越出输出目录（路径遍历）。
 const sanitizeId = (value) =>
@@ -169,6 +182,7 @@ export const rowToConfig = (row, index) => {
       books: buildBooks(row),
       subtitles: buildSubtitles(row),
       intro: buildIntro(row),
+      visualAssets: buildVisualAssets(row),
     },
   };
 };

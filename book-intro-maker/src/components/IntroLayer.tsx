@@ -12,6 +12,7 @@ import {Video} from '@remotion/media';
 import {AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate} from 'remotion';
 import type {IntroConfig} from '../configSchema';
 import {resolveSrc} from '../media';
+import {CoverImage} from './CoverImage';
 
 const WIDTH = 720;
 const HEIGHT = 1280;
@@ -44,7 +45,7 @@ const SnowField: React.FC = () => {
 };
 
 /** 生成式开场背景：不依赖任何外部素材。 */
-const GeneratedIntro: React.FC = () => {
+const GeneratedIntroFallback: React.FC = () => {
   const frame = useCurrentFrame();
   const pan = interpolate(frame, [0, 134], [0, -34], {
     extrapolateLeft: 'clamp',
@@ -87,23 +88,44 @@ const GeneratedIntro: React.FC = () => {
           background: 'linear-gradient(0deg, rgba(6,8,12,0.9), rgba(6,8,12,0))',
         }}
       />
-      <SnowField />
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 70,
-          textAlign: 'center',
-          color: 'rgba(255,255,255,0.55)',
-          fontSize: 16,
-        }}
-      >
-        @BookIntroMaker
-      </div>
     </AbsoluteFill>
   );
 };
+
+const IntroBrand: React.FC<{text?: string}> = ({text}) =>
+  text ? (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 70,
+        textAlign: 'center',
+        color: 'rgba(255,255,255,0.55)',
+        fontSize: 16,
+      }}
+    >
+      {text}
+    </div>
+  ) : null;
+
+const GeneratedIntro: React.FC<{intro: IntroConfig}> = ({intro}) => (
+  <AbsoluteFill style={{background: '#101419', overflow: 'hidden'}}>
+    <CoverImage src={intro.backgroundPath} fallback={<GeneratedIntroFallback />} />
+    <div
+      style={{
+        position: 'absolute',
+        left: -80,
+        right: -80,
+        bottom: 0,
+        height: 410,
+        background: 'linear-gradient(0deg, rgba(6,8,12,0.9), rgba(6,8,12,0))',
+      }}
+    />
+    <SnowField />
+    <IntroBrand text={intro.brandText} />
+  </AbsoluteFill>
+);
 
 /** 本地视频开场，支持裁剪起止（秒）、音量、静音。 */
 const VideoIntro: React.FC<{intro: IntroConfig; videoPath: string}> = ({intro, videoPath}) => {
@@ -132,5 +154,5 @@ export const IntroLayer: React.FC<{intro: IntroConfig}> = ({intro}) => {
   if (intro.mode === 'video' && intro.videoPath) {
     return <VideoIntro intro={intro} videoPath={intro.videoPath} />;
   }
-  return <GeneratedIntro />;
+  return <GeneratedIntro intro={intro} />;
 };

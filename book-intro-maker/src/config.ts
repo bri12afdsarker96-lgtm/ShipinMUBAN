@@ -14,12 +14,14 @@ import introJson from '../config/intro.example.json';
 import subtitlesJson from '../config/subtitles.example.json';
 import {
   DEFAULT_INTRO,
+  DEFAULT_VISUAL_ASSETS,
   DEFAULT_SUBTITLE_STYLE,
   motifForIndex,
   paletteForIndex,
   parseBooksConfig,
   parseIntroConfig,
   parseSubtitlesConfig,
+  parseVisualAssetsConfig,
 } from './configSchema';
 import type {
   BookRef,
@@ -29,6 +31,7 @@ import type {
   Palette,
   SubtitleItem,
   SubtitlesConfig,
+  VisualAssetsConfig,
 } from './configSchema';
 import {samplePreset} from './preset';
 import type {HookLine} from './preset';
@@ -67,6 +70,7 @@ export type BookIntroProps = {
   bookCards: BookCoverCardData[];
   mainBook: MainBookData;
   subtitleTracks: SubtitleItem[];
+  visualAssets: VisualAssetsConfig;
 };
 
 /** 默认背景音乐（阶段一示例节拍）。 */
@@ -99,6 +103,7 @@ export const buildPropsFromConfig = (
   books: BooksConfig,
   subtitles: SubtitlesConfig,
   intro: IntroConfig,
+  visualAssets: VisualAssetsConfig = {...DEFAULT_VISUAL_ASSETS},
 ): BookIntroProps => {
   const bookCards: BookCoverCardData[] = books.flashBooks.map((book, index) => ({
     title: book.title,
@@ -126,6 +131,7 @@ export const buildPropsFromConfig = (
     bookCards,
     mainBook,
     subtitleTracks: subtitles.tracks,
+    visualAssets,
   };
 };
 
@@ -135,6 +141,7 @@ export const loadConfigProps = (): BookIntroProps =>
     parseBooksConfig(booksJson),
     parseSubtitlesConfig(subtitlesJson),
     parseIntroConfig(introJson),
+    parseVisualAssetsConfig(undefined),
   );
 
 /** 原始（未解析）三件套配置。批量生产每条视频以此作为 inputProps。 */
@@ -145,6 +152,7 @@ export type RawConfigInput = {
   books?: unknown;
   subtitles?: unknown;
   intro?: unknown;
+  visualAssets?: unknown;
 };
 
 /** 示例三件套原始配置，作为 `BookIntroFromConfig` 的默认 props。 */
@@ -154,6 +162,7 @@ export const rawExampleConfig: RawConfigInput = {
   books: booksJson,
   subtitles: subtitlesJson,
   intro: introJson,
+  visualAssets: {...DEFAULT_VISUAL_ASSETS},
 };
 
 /**
@@ -165,6 +174,7 @@ export const propsFromRaw = (raw: RawConfigInput): BookIntroProps => ({
     parseBooksConfig(raw?.books ?? booksJson),
     parseSubtitlesConfig(raw?.subtitles ?? subtitlesJson),
     parseIntroConfig(raw?.intro ?? introJson),
+    parseVisualAssetsConfig(raw?.visualAssets),
   ),
   template: typeof raw?.template === 'string' ? raw.template : undefined,
   audio: typeof raw?.audio === 'string' ? raw.audio : undefined,
@@ -216,4 +226,5 @@ export const sampleProps: BookIntroProps = {
     backgroundPath: null,
   },
   subtitleTracks: hookLinesToTracks(samplePreset.hookLines),
+  visualAssets: {...DEFAULT_VISUAL_ASSETS},
 };

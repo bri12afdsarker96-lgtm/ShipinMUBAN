@@ -22,12 +22,21 @@ const coverExists = (root, book) => {
   return existsSync(path.join(root, 'public', conventionCoverPath(book)));
 };
 
+const publicAssetExists = (root, value) => {
+  if (!value) return true;
+  const rel = String(value).replace(/^public[\\/]/, '').replace(/^\/+/, '');
+  if (/^(https?:|data:|blob:)/i.test(rel)) return true;
+  return existsSync(path.join(root, 'public', rel));
+};
+
 /** 渲染前静态质检。返回 {errors, warnings, infos}。 */
 export const runQc = (job, root) => {
   const errors = [];
   const warnings = [];
   const infos = [];
   const {books, subtitles} = job.config;
+  const intro = job.config.intro || {};
+  const visualAssets = job.config.visualAssets || {};
   const main = books.mainBook || {};
 
   // 必填。
@@ -67,6 +76,19 @@ export const runQc = (job, root) => {
   const audioRel = String(job.audio || 'sample-beat.wav').replace(/^public\//, '').replace(/^\/+/, '');
   if (!/^(https?:|data:)/i.test(audioRel) && !existsSync(path.join(root, 'public', audioRel))) {
     warnings.push(`背景音乐缺失（${audioRel}），视频将没有节拍音频`);
+  }
+
+  if (intro.mode === 'video' && intro.videoPath && !publicAssetExists(root, intro.videoPath)) {
+    errors.push(`开场视频不存在（${intro.videoPath}）`);
+  }
+  if (intro.backgroundPath && !publicAssetExists(root, intro.backgroundPath)) {
+    infos.push(`开场背景缺失将降级为生成式背景：${intro.backgroundPath}`);
+  }
+  if (visualAssets.flashBackgroundPath && !publicAssetExists(root, visualAssets.flashBackgroundPath)) {
+    infos.push(`快闪背景缺失将降级为模板背景：${visualAssets.flashBackgroundPath}`);
+  }
+  if (main.backgroundPath && !publicAssetExists(root, main.backgroundPath)) {
+    infos.push(`主书背景缺失将降级为模板背景：${main.backgroundPath}`);
   }
 
   // 封面存在性（缺失会降级，仅提示）。

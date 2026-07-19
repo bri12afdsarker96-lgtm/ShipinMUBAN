@@ -160,7 +160,16 @@ const BookCoverCard: React.FC<{card: BookCoverCardData; pulse: number; tokens: T
   );
 };
 
-const BookFlashSequence: React.FC<{cuts: number[]; bookCards: BookCoverCardData[]; tokens: TemplateTokens}> = ({cuts, bookCards, tokens}) => {
+const FlashBackgroundFallback: React.FC<{card: BookCoverCardData}> = ({card}) => (
+  <div style={{position: 'absolute', inset: 0, background: `radial-gradient(circle at 50% 42%, ${card.palette[0]}55, transparent 45%), #050505`}} />
+);
+
+const BookFlashSequence: React.FC<{
+  cuts: number[];
+  bookCards: BookCoverCardData[];
+  tokens: TemplateTokens;
+  backgroundPath: string | null;
+}> = ({cuts, bookCards, tokens, backgroundPath}) => {
   const frame = useCurrentFrame();
   const active = activeIndexFromCuts(frame, cuts);
   const coverIndex = clamp(active, 0, bookCards.length - 1);
@@ -177,7 +186,7 @@ const BookFlashSequence: React.FC<{cuts: number[]; bookCards: BookCoverCardData[
 
   return (
     <AbsoluteFill style={{background: '#050505', opacity: fade}}>
-      <div style={{position: 'absolute', inset: 0, background: `radial-gradient(circle at 50% 42%, ${card.palette[0]}55, transparent 45%), #050505`}} />
+      <CoverImage src={backgroundPath} fallback={<FlashBackgroundFallback card={card} />} />
       <BookCoverCard card={card} pulse={pulse} tokens={tokens} />
       <div style={{position: 'absolute', inset: 0, opacity: pulse * 0.32, background: 'white', mixBlendMode: 'screen'}} />
       <div style={{position: 'absolute', inset: 0, boxShadow: `inset 0 0 ${140 + pulse * 80}px rgba(0,0,0,0.88)`}} />
@@ -326,7 +335,7 @@ export const BookIntroVideo: React.FC<BookIntroProps> = (props) => {
 
       {frame < flashStart ? <IntroLayer intro={props.intro} /> : null}
       {hasCuts && frame >= flashStart - 4 && frame < mainStart ? (
-        <BookFlashSequence cuts={cuts} bookCards={props.bookCards} tokens={tokens} />
+        <BookFlashSequence cuts={cuts} bookCards={props.bookCards} tokens={tokens} backgroundPath={props.visualAssets?.flashBackgroundPath ?? null} />
       ) : null}
       {hasCuts && frame >= mainStart ? <MainBookScene mainBook={props.mainBook} start={mainStart} tokens={tokens} /> : null}
 

@@ -116,7 +116,8 @@ npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1
 纯前端 React + `@remotion/player`：左侧表单编辑模板/主书/书单/字幕/音乐，中间**实时预览**，
 右侧**导出配置 JSON** 直接喂给批量引擎。复用渲染层的 `propsFromRaw`/模板注册表，所见即所得。
 **本地服务版**额外支持界面内**一键渲染 MP4** 与**批量队列**（提交多条 → 实时进度/失败原因/产物链接），
-并让预览用上真实音频/封面；主书封面可在界面内上传到 `public/covers/`，也可触发封面查询；
+并让预览用上真实音频/封面；主书封面、快闪书封、快闪背景、主书背景、开场视频、开场生成背景和音乐
+都可在界面内上传/替换，主书封面也可触发在线查询；
 快闪切点可在界面内自动检测；批量队列可暂停、恢复，并可对失败条目单条重试。支持
 `?template=&title=&cover=&view=batch` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
 
@@ -125,10 +126,10 @@ npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1
 ## 回归测试
 
 ```bash
-npm.cmd test        # 覆盖关键回归：批量 id、安全降级、413、队列控制；有浏览器时加跑渲染项
+npm.cmd test        # 覆盖关键回归：批量 id、安全降级、413、素材上传、队列控制；有浏览器时加跑渲染项
 ```
 
-id 清理、413 与队列控制无需浏览器；books 降级与批量渲染断言需设 `BROWSER_EXECUTABLE`（或本机 Chrome），
+id 清理、413、素材上传与队列控制无需浏览器；books 降级与批量渲染断言需设 `BROWSER_EXECUTABLE`（或本机 Chrome），
 或设 `RUN_RENDER_TESTS=1` 让 Remotion 使用已安装的无头浏览器。
 
 仓库配 GitHub Actions（`../.github/workflows/ci.yml`）：PR/push 时安装无头浏览器（`remotion browser

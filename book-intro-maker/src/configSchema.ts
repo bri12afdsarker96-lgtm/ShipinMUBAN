@@ -15,6 +15,8 @@ export type IntroConfig = {
   mode: 'video' | 'generated';
   /** 本地视频路径。相对路径按 Remotion `staticFile` 解析。 */
   videoPath: string | null;
+  /** 生成式开场的背景图片覆盖。 */
+  backgroundPath: string | null;
   /** 裁剪起点（秒）。 */
   trimStart: number;
   /** 裁剪终点（秒）。为 null 表示到视频结尾。 */
@@ -25,6 +27,8 @@ export type IntroConfig = {
   muted: boolean;
   /** 是否显示字幕轨道。 */
   showSubtitles: boolean;
+  /** 开场底部角标，置空则不显示。 */
+  brandText?: string;
 };
 
 /** 单本书的引用，对应 `config/books.example.json` 里的 `flashBooks` 元素。 */
@@ -50,6 +54,11 @@ export type BooksConfig = {
   flashCutFrames: number[];
   flashBooks: BookRef[];
   mainBook: MainBookRef;
+};
+
+export type VisualAssetsConfig = {
+  /** 快闪书封段背景图片覆盖。 */
+  flashBackgroundPath: string | null;
 };
 
 export type SubtitlePosition = 'upper' | 'center' | 'lower';
@@ -84,11 +93,17 @@ export type SubtitlesConfig = {
 export const DEFAULT_INTRO: IntroConfig = {
   mode: 'generated',
   videoPath: null,
+  backgroundPath: null,
   trimStart: 0,
   trimEnd: null,
   volume: 1,
   muted: false,
   showSubtitles: true,
+  brandText: '@BookIntroMaker',
+};
+
+export const DEFAULT_VISUAL_ASSETS: VisualAssetsConfig = {
+  flashBackgroundPath: null,
 };
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
@@ -167,6 +182,7 @@ export const parseIntroConfig = (raw: unknown): IntroConfig => {
   return {
     mode,
     videoPath: asNullableString(raw.videoPath),
+    backgroundPath: asNullableString(raw.backgroundPath),
     trimStart: Math.max(0, asNumber(raw.trimStart, DEFAULT_INTRO.trimStart, 'intro.trimStart')),
     trimEnd:
       raw.trimEnd === null || raw.trimEnd === undefined
@@ -175,6 +191,14 @@ export const parseIntroConfig = (raw: unknown): IntroConfig => {
     volume: clamp(asNumber(raw.volume, DEFAULT_INTRO.volume, 'intro.volume'), 0, 1),
     muted: asBoolean(raw.muted, DEFAULT_INTRO.muted),
     showSubtitles: asBoolean(raw.showSubtitles, DEFAULT_INTRO.showSubtitles),
+    brandText: typeof raw.brandText === 'string' ? raw.brandText : DEFAULT_INTRO.brandText,
+  };
+};
+
+export const parseVisualAssetsConfig = (raw: unknown): VisualAssetsConfig => {
+  if (!isObject(raw)) return {...DEFAULT_VISUAL_ASSETS};
+  return {
+    flashBackgroundPath: asNullableString(raw.flashBackgroundPath),
   };
 };
 

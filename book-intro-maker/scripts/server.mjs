@@ -40,7 +40,13 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
   '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -59,8 +65,9 @@ const sendJson = (res, code, obj) => {
   res.end(JSON.stringify(obj));
 };
 
-const MAX_BODY = 4 * 1024 * 1024; // 4MB 上限，防止无界 body 撑爆内存
-const readBody = (req) =>
+const MAX_BODY = 4 * 1024 * 1024; // 默认 4MB 上限，防止普通 API 无界 body 撑爆内存
+const MAX_UPLOAD_BODY = 90 * 1024 * 1024; // 本地素材上传需要容纳短视频 / 音频的 base64 JSON
+const readBody = (req, {maxBytes = MAX_BODY} = {}) =>
   new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -68,7 +75,7 @@ const readBody = (req) =>
     req.on('data', (c) => {
       if (aborted) return;
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > maxBytes) {
         aborted = true;
         // 暂停接收但不销毁 socket，让上层能正常回 413（destroy 会让客户端只收到连接失败）。
         req.pause();
@@ -86,6 +93,15 @@ const readBody = (req) =>
 // 读取并解析 JSON body，畸形输入抛 400（避免把内部错误经 500 泄露）。
 const readJson = async (req) => {
   const body = await readBody(req);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw Object.assign(new Error('请求体不是合法 JSON'), {statusCode: 400});
+  }
+};
+
+const readUploadJson = async (req) => {
+  const body = await readBody(req, {maxBytes: MAX_UPLOAD_BODY});
   try {
     return JSON.parse(body);
   } catch {
@@ -421,10 +437,36 @@ const UPLOAD_KINDS = {
     maxBytes: 3 * 1024 * 1024,
     mimeToExt: {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp'},
   },
+  backgrounds: {
+    dir: path.join(publicDir, 'backgrounds'),
+    prefix: 'backgrounds',
+    maxBytes: 8 * 1024 * 1024,
+    mimeToExt: {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp'},
+  },
+  introVideos: {
+    dir: path.join(publicDir, 'intro-videos'),
+    prefix: 'intro-videos',
+    maxBytes: 64 * 1024 * 1024,
+    mimeToExt: {'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov'},
+  },
+  audio: {
+    dir: path.join(publicDir, 'audio'),
+    prefix: 'audio',
+    maxBytes: 24 * 1024 * 1024,
+    mimeToExt: {
+      'audio/mpeg': '.mp3',
+      'audio/mp3': '.mp3',
+      'audio/wav': '.wav',
+      'audio/x-wav': '.wav',
+      'audio/mp4': '.m4a',
+      'audio/aac': '.aac',
+      'audio/ogg': '.ogg',
+    },
+  },
 };
 
 const handleAssetUpload = async (req, res) => {
-  const body = await readJson(req);
+  const body = await readUploadJson(req);
   const kind = String(body.kind || 'covers');
   const spec = UPLOAD_KINDS[kind];
   if (!spec) return sendJson(res, 400, {ok: false, error: '不支持的素材类型'});

@@ -6,7 +6,7 @@
 // 分类与引用字段：
 //   audio          -> 顶层 audio
 //   covers         -> books.flashBooks[].coverPath / mainBook.coverPath
-//   backgrounds    -> mainBook.backgroundPath
+//   backgrounds    -> mainBook.backgroundPath / intro.backgroundPath / visualAssets.flashBackgroundPath
 //   introVideos    -> intro.videoPath
 //   subtitleStyles -> subtitles.tracks[].style（字符串引用 -> 样式对象）
 
@@ -48,6 +48,10 @@ export const resolveAssetsInJob = (job, assets) => {
   }
 
   if (c.intro && refId(c.intro.videoPath)) c.intro.videoPath = resolvePath(assets, 'introVideos', c.intro.videoPath);
+  if (c.intro && refId(c.intro.backgroundPath)) c.intro.backgroundPath = resolvePath(assets, 'backgrounds', c.intro.backgroundPath);
+  if (c.visualAssets && refId(c.visualAssets.flashBackgroundPath)) {
+    c.visualAssets.flashBackgroundPath = resolvePath(assets, 'backgrounds', c.visualAssets.flashBackgroundPath);
+  }
 
   for (const t of c.subtitles?.tracks || []) {
     if (typeof t.style === 'string') {

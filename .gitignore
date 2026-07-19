@@ -13,6 +13,12 @@ _analysis/
 
 book-intro-maker/public/covers/*
 !book-intro-maker/public/covers/.gitkeep
+book-intro-maker/public/backgrounds/*
+!book-intro-maker/public/backgrounds/.gitkeep
+book-intro-maker/public/intro-videos/*
+!book-intro-maker/public/intro-videos/.gitkeep
+book-intro-maker/public/audio/*
+!book-intro-maker/public/audio/.gitkeep
 book-intro-maker/config/*.resolved.json
 
 book-intro-maker/gui/dist/

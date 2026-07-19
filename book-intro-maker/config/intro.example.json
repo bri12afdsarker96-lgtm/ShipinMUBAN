@@ -1,9 +1,11 @@
 {
   "mode": "generated",
   "videoPath": null,
+  "backgroundPath": null,
   "trimStart": 0,
   "trimEnd": null,
   "volume": 1,
   "muted": false,
-  "showSubtitles": true
+  "showSubtitles": true,
+  "brandText": "@BookIntroMaker"
 }
