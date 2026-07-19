@@ -116,7 +116,8 @@ npm.cmd run gui:build && npm.cmd run server   # 本地服务版 http://127.0.0.1
 纯前端 React + `@remotion/player`：左侧表单编辑模板/主书/书单/字幕/音乐，中间**实时预览**，
 右侧**导出配置 JSON** 直接喂给批量引擎。复用渲染层的 `propsFromRaw`/模板注册表，所见即所得。
 **本地服务版**额外支持界面内**一键渲染 MP4** 与**批量队列**（提交多条 → 实时进度/质检/产物链接），
-并让预览用上真实音频/封面。支持 `?template=&title=&view=batch` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
+并让预览用上真实音频/封面；主书封面可在界面内上传到 `public/covers/`。支持
+`?template=&title=&cover=&view=batch` 等 URL 预设。详见 `../docs/phase-3-editor.md`。
 
 > 非 Windows 环境用 `--browser <path>` 或环境变量 `BROWSER_EXECUTABLE` 指定浏览器。
 

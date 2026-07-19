@@ -40,6 +40,7 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
 };
 
 const cors = (res) => {
@@ -107,6 +108,8 @@ const resolveStatic = (urlPath) => {
   if (clean === '') return path.join(distDir, 'index.html');
   const candidates = clean.startsWith('out/')
     ? [[outDir, path.join(root, clean)]]
+    : clean.startsWith('public/')
+      ? [[publicDir, path.join(root, clean)]]
     : [
         [distDir, path.join(distDir, clean)],
         [publicDir, path.join(publicDir, clean)],
@@ -267,6 +270,46 @@ const handleAssets = async (res) => {
   return sendJson(res, 200, JSON.parse(await readFile(p, 'utf8')));
 };
 
+const UPLOAD_KINDS = {
+  covers: {
+    dir: path.join(publicDir, 'covers'),
+    prefix: 'covers',
+    maxBytes: 3 * 1024 * 1024,
+    mimeToExt: {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp'},
+  },
+};
+
+const handleAssetUpload = async (req, res) => {
+  const body = await readJson(req);
+  const kind = String(body.kind || 'covers');
+  const spec = UPLOAD_KINDS[kind];
+  if (!spec) return sendJson(res, 400, {ok: false, error: '不支持的素材类型'});
+
+  const match = String(body.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return sendJson(res, 400, {ok: false, error: '缺少 base64 文件数据'});
+
+  const mime = match[1].toLowerCase();
+  const extFromMime = spec.mimeToExt[mime];
+  if (!extFromMime) return sendJson(res, 400, {ok: false, error: '不支持的文件格式'});
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length <= 0) return sendJson(res, 400, {ok: false, error: '文件为空'});
+  if (buffer.length > spec.maxBytes) {
+    throw Object.assign(new Error(`文件过大，最大 ${(spec.maxBytes / 1048576).toFixed(1)}MB`), {statusCode: 413});
+  }
+
+  const original = String(body.fileName || 'cover');
+  const originalExt = path.extname(original).toLowerCase();
+  const ext = Object.values(spec.mimeToExt).includes(originalExt) ? originalExt : extFromMime;
+  const baseName = safeSlug(path.basename(original, originalExt));
+  const fileName = `${baseName}-${Date.now()}-${uniqueSuffix()}${ext}`;
+  await mkdir(spec.dir, {recursive: true});
+  await writeFile(path.join(spec.dir, fileName), buffer);
+
+  const assetPath = `${spec.prefix}/${fileName}`;
+  return sendJson(res, 200, {ok: true, kind, path: assetPath, url: `/${assetPath}`, bytes: buffer.length, mime});
+};
+
 const server = createServer(async (req, res) => {
   try {
     // 防 DNS-rebinding：只接受本机 Host，挡住外部域名指向 127.0.0.1 的浏览器请求。
@@ -284,6 +327,7 @@ const server = createServer(async (req, res) => {
     // 注意：async handler 必须 await，否则内部抛错会变成 unhandled rejection 崩溃进程。
     if (url === '/api/health') return sendJson(res, 200, {ok: true});
     if (url === '/api/assets') return await handleAssets(res);
+    if (url === '/api/assets/upload' && req.method === 'POST') return await handleAssetUpload(req, res);
     if (url.startsWith('/api/renders')) return await handleRenders(res);
     if (url === '/api/render' && req.method === 'POST') return await handleRender(req, res);
     if (url === '/api/batches') return await handleBatchesList(res);

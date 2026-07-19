@@ -18,6 +18,7 @@ type Form = {
   audio: string;
   mainTitle: string;
   mainAuthor: string;
+  mainCoverPath: string;
   mainZh: string;
   mainEn: string;
   flashBooksText: string;
@@ -32,6 +33,7 @@ const INITIAL: Form = {
   audio: 'sample-beat.wav',
   mainTitle: '月亮与六便士',
   mainAuthor: '毛姆',
+  mainCoverPath: '',
   mainZh: '满地都是六便士，他却抬头看见了月亮',
   mainEn: 'Everyone has sixpence, he looked up at the moon',
   flashBooksText: ['了不起的盖茨比 | 菲茨杰拉德', '简爱 | 夏洛蒂', '瓦尔登湖 | 梭罗', '傲慢与偏见 | 奥斯汀', '白鲸 | 麦尔维尔'].join('\n'),
@@ -85,7 +87,7 @@ const buildRaw = (form: Form): RawConfigInput => {
         title: form.mainTitle,
         author: form.mainAuthor || undefined,
         isbn: null,
-        coverPath: null,
+        coverPath: form.mainCoverPath || null,
         backgroundPath: null,
         zhLine: form.mainZh || undefined,
         enLine: form.mainEn || undefined,
@@ -106,6 +108,19 @@ const Field: React.FC<{label: string; children: React.ReactNode}> = ({label, chi
   </label>
 );
 
+const readAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
+
+const publicAssetUrl = (assetPath: string): string => {
+  if (/^(https?:|data:|blob:)/i.test(assetPath)) return assetPath;
+  return `/${assetPath.replace(/^public\//, '').replace(/^\/+/, '')}`;
+};
+
 // 支持通过 URL 预填初始表单，便于分享带预设的编辑器链接（如 ?template=drama&title=...）。
 const initialForm = (): Form => {
   if (typeof location === 'undefined') return INITIAL;
@@ -115,6 +130,7 @@ const initialForm = (): Form => {
     template: p.get('template') || INITIAL.template,
     mainTitle: p.get('title') || INITIAL.mainTitle,
     mainAuthor: p.get('author') || INITIAL.mainAuthor,
+    mainCoverPath: p.get('cover') || INITIAL.mainCoverPath,
     mainZh: p.get('zh') || INITIAL.mainZh,
     mainEn: p.get('en') || INITIAL.mainEn,
   };
@@ -138,6 +154,7 @@ export const App: React.FC = () => {
   // 本地服务：探活 + 一键渲染 MP4。纯静态打开时按钮不可用。
   const [apiOk, setApiOk] = useState(false);
   const [render, setRender] = useState<{status: 'idle' | 'rendering' | 'done' | 'error'; url?: string; error?: string}>({status: 'idle'});
+  const [upload, setUpload] = useState<{status: 'idle' | 'uploading' | 'done' | 'error'; error?: string}>({status: 'idle'});
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
@@ -152,6 +169,29 @@ export const App: React.FC = () => {
       else setRender({status: 'error', error: data.error || '渲染失败'});
     } catch (e) {
       setRender({status: 'error', error: String(e)});
+    }
+  };
+
+  const uploadMainCover = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (!apiOk) {
+      setUpload({status: 'error', error: '本地服务未连接'});
+      return;
+    }
+    setUpload({status: 'uploading'});
+    try {
+      const dataUrl = await readAsDataUrl(file);
+      const res = await fetch('/api/assets/upload', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({kind: 'covers', fileName: file.name, dataUrl}),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '上传失败');
+      set('mainCoverPath', data.path);
+      setUpload({status: 'done'});
+    } catch (error) {
+      setUpload({status: 'error', error: String(error)});
     }
   };
 
@@ -302,6 +342,17 @@ export const App: React.FC = () => {
         </Field>
         <Field label="主书 · 作者">
           <input style={inputStyle} value={form.mainAuthor} onChange={(e) => set('mainAuthor', e.target.value)} />
+        </Field>
+        <Field label="主书 · 本地封面">
+          <div style={{display: 'flex', gap: 8}}>
+            <input style={{...inputStyle, flex: 1}} value={form.mainCoverPath} onChange={(e) => set('mainCoverPath', e.target.value)} placeholder="covers/book.jpg" />
+            <label style={{padding: '8px 11px', borderRadius: 8, border: '1px solid #cdd5df', background: apiOk ? '#fff' : '#eef2f7', fontSize: 13, cursor: apiOk ? 'pointer' : 'default', whiteSpace: 'nowrap'}}>
+              {upload.status === 'uploading' ? '上传中' : '上传'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadMainCover(e.target.files?.[0])} style={{display: 'none'}} />
+            </label>
+          </div>
+          {upload.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginTop: 6}}>{upload.error}</div> : null}
+          {form.mainCoverPath ? <img src={publicAssetUrl(form.mainCoverPath)} alt="主书封面" style={{width: 68, height: 96, objectFit: 'cover', borderRadius: 6, marginTop: 8, border: '1px solid #d3d9e0'}} /> : null}
         </Field>
         <Field label="主书 · 中文金句">
           <input style={inputStyle} value={form.mainZh} onChange={(e) => set('mainZh', e.target.value)} />
