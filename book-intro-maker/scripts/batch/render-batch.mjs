@@ -1,34 +1,25 @@
-// 批量生产引擎（阶段三）。
+// 批量生产引擎 CLI（阶段三）。
 //
-// 流程：导入数据 -> 行映射为三件套配置 -> 渲染前质检 -> 一次打包、队列渲染
-// （并发上限 + 失败重试）-> 渲染后质检 -> 归档输出并写 manifest / 质检报告。
+// 流程：导入数据 -> 行映射为三件套 -> 素材解析 -> 自动卡点 -> 质检 -> 队列渲染
+// （并发上限 + 失败重试）-> 渲染后质检 -> 归档 manifest / 质检报告。
+// 核心编排在 lib/run-batch.mjs（与本地服务队列共用）。
 //
 // 用法：
 //   node scripts/batch/render-batch.mjs --input config/batch/sample.json
 //   node scripts/batch/render-batch.mjs --input data.csv --concurrency 2 --retries 2
 //   node scripts/batch/render-batch.mjs --input data.json --dry      # 只质检不渲染
 //
-// 参数：
-//   --input <file>       必填，.json 或 .csv
-//   --out <dir>          输出根目录（默认 out/batch）
-//   --concurrency <n>    批量并发条数（默认 1）
-//   --retries <n>        单条失败重试次数（默认 2）
-//   --limit <n>          只处理前 n 条
-//   --browser <path>     浏览器可执行文件（默认取环境变量 BROWSER_EXECUTABLE）
-//   --dry                只导入 + 质检，不渲染
+// 参数：--input <file>（必填 .json/.csv）、--out <dir>、--concurrency <n>、
+//       --retries <n>、--limit <n>、--browser <path>、--assets <file>、--dry
 
-import {existsSync, readFileSync} from 'node:fs';
-import {mkdir, writeFile, stat} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import {getBundle, renderJob} from './lib/render-core.mjs';
 import {parseInputFile} from './lib/parse-input.mjs';
-import {rowToConfig} from './lib/row-to-config.mjs';
-import {runPool} from './lib/pool.mjs';
-import {runQc, runPostQc} from './lib/qc.mjs';
-import {decodeWav} from '../lib/audio/wav.mjs';
-import {detectCutFrames} from '../lib/audio/onset.mjs';
-import {loadAssets, resolveAssetsInJob} from '../lib/assets.mjs';
+import {loadAssets} from '../lib/assets.mjs';
+import {runQc} from './lib/qc.mjs';
+import {prepareJobs, runBatch} from './lib/run-batch.mjs';
 
 const parseArgs = (argv) => {
   const args = {out: 'out/batch', concurrency: 1, retries: 2, dry: false};
@@ -48,9 +39,17 @@ const parseArgs = (argv) => {
 
 const timestampId = () => new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 
-const renderOne = ({serveUrl, job, outputPath, browserExecutable, retries}) =>
-  // 模板 id、背景音乐随 inputProps 一起传入渲染。
-  renderJob({serveUrl, inputProps: {...job.config, template: job.template, audio: job.audio}, outputPath, browserExecutable, retries});
+const archive = async ({jobDir, jobId, inputPath, root, dry, records}) => {
+  const summary = records.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, {});
+  const manifest = {jobId, input: path.relative(root, inputPath), createdAt: new Date().toISOString(), dry, total: records.length, summary, records};
+  await writeFile(path.join(jobDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  const qcReport = records.map((r) => ({id: r.id, status: r.status, ...r.qc}));
+  await writeFile(path.join(jobDir, 'qc-report.json'), `${JSON.stringify(qcReport, null, 2)}\n`, 'utf8');
+  return summary;
+};
 
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -69,137 +68,53 @@ const main = async () => {
   }
 
   const browserExecutable = args.browser || process.env.BROWSER_EXECUTABLE || undefined;
+  let rows = await parseInputFile(inputPath);
+  if (args.limit) rows = rows.slice(0, args.limit);
+  console.log(`导入 ${rows.length} 条视频任务`);
 
-  // 1. 导入 + 映射。
-  const rows = await parseInputFile(inputPath);
-  let jobs = rows.map((row, i) => rowToConfig(row, i));
-  if (args.limit) jobs = jobs.slice(0, args.limit);
-  console.log(`导入 ${jobs.length} 条视频任务`);
-
-  // 1a. 素材库：解析 asset: 引用（音乐 / 封面 / 背景 / 开场视频 / 字幕样式）。
   const assetsPath = path.resolve(root, args.assets || 'config/assets.example.json');
   const assets = loadAssets(assetsPath);
-  if (assets) {
-    console.log(`素材库：${path.relative(root, assetsPath)}`);
-    for (const job of jobs) resolveAssetsInJob(job, assets);
-  }
-
-  // 1b. 自动卡点：对指定了 beatsAudio 的任务，检测音频瞬态覆盖 flashCutFrames。
-  for (const job of jobs) {
-    if (!job.beats) continue;
-    try {
-      const audioPath = path.resolve(root, job.beats.audio);
-      const {sampleRate, samples} = decodeWav(readFileSync(audioPath));
-      const frames = detectCutFrames(samples, sampleRate, {
-        fps: 30,
-        startSec: job.beats.startSec,
-        endSec: job.beats.endSec,
-        max: job.beats.max,
-        sensitivity: job.beats.sensitivity,
-      });
-      if (frames.length >= 2) {
-        job.config.books.flashCutFrames = frames;
-        console.log(`[卡点] ${job.id}：自动检测 ${frames.length} 个切点`);
-      } else {
-        console.warn(`[卡点] ${job.id}：检测结果过少（${frames.length}），保留原切点`);
-      }
-    } catch (error) {
-      console.warn(`[卡点] ${job.id}：音频检测失败（${error.message}），保留原切点`);
-    }
-  }
+  if (assets) console.log(`素材库：${path.relative(root, assetsPath)}`);
 
   const jobId = timestampId();
   const jobDir = path.join(root, args.out, jobId);
   const videosDir = path.join(jobDir, 'videos');
   await mkdir(videosDir, {recursive: true});
 
-  // 2. 渲染前质检。
-  const prepared = jobs.map((job) => ({job, qc: runQc(job, root)}));
-
-  // 3. 打包（渲染时才需要）。
-  let serveUrl = null;
-  if (!args.dry) {
+  let records;
+  if (args.dry) {
+    const jobs = prepareJobs(rows, {root, assets});
+    records = jobs.map((job) => {
+      const qc = runQc(job, root);
+      return {id: job.id, template: job.template, status: qc.errors.length ? 'qc-failed' : 'qc-passed', qc: {errors: qc.errors, warnings: qc.warnings, infos: qc.infos}};
+    });
+  } else {
     console.log('打包 Remotion 项目…');
-    serveUrl = await getBundle(root);
+    records = await runBatch({
+      rows,
+      root,
+      assets,
+      browserExecutable,
+      concurrency: args.concurrency,
+      retries: args.retries,
+      outDir: videosDir,
+      onProgress: (p) => {
+        if (p.status === 'rendering') console.log(`[渲染] ${p.id} …`);
+        else if (p.status === 'rendered') console.log(`[完成] ${p.id} (${(p.bytes / 1048576).toFixed(2)}MB, ${(p.ms / 1000).toFixed(1)}s)`);
+        else if (p.status === 'failed') console.error(`[失败] ${p.id}：${p.error}`);
+        else if (p.status === 'qc-failed') console.warn(`[跳过] ${p.id}：质检未通过`);
+      },
+    });
   }
 
-  // 4. 队列渲染 + 渲染后质检。
-  const records = await runPool(
-    prepared,
-    async ({job, qc}) => {
-      const started = Date.now();
-      const base = {
-        id: job.id,
-        template: job.template,
-        qc: {errors: qc.errors, warnings: qc.warnings, infos: qc.infos},
-      };
+  const summary = await archive({jobDir, jobId, inputPath, root, dry: args.dry, records});
 
-      if (qc.errors.length > 0) {
-        console.warn(`[跳过] ${job.id}：质检未通过 -> ${qc.errors.join('；')}`);
-        return {...base, status: 'qc-failed'};
-      }
-      if (args.dry) {
-        return {...base, status: 'qc-passed'};
-      }
-
-      const outputPath = path.join(videosDir, `${job.id}.mp4`);
-      console.log(`[渲染] ${job.id} …`);
-      const result = await renderOne({serveUrl, job, outputPath, browserExecutable, retries: args.retries});
-      const ms = Date.now() - started;
-
-      if (!result.ok) {
-        console.error(`[失败] ${job.id}：${result.error}`);
-        return {...base, status: 'failed', attempts: result.attempts, error: result.error, ms};
-      }
-
-      const post = runPostQc(outputPath);
-      if (post.errors.length > 0) {
-        return {...base, status: 'failed', attempts: result.attempts, error: post.errors.join('；'), ms};
-      }
-      const {size} = await stat(outputPath);
-      console.log(`[完成] ${job.id} (${(size / 1024 / 1024).toFixed(2)}MB, ${(ms / 1000).toFixed(1)}s)`);
-      return {
-        ...base,
-        status: 'rendered',
-        attempts: result.attempts,
-        output: path.relative(root, outputPath),
-        bytes: size,
-        ms,
-      };
-    },
-    args.concurrency,
-  );
-
-  // 5. 归档 manifest + 质检报告。
-  const summary = records.reduce((acc, r) => {
-    acc[r.status] = (acc[r.status] || 0) + 1;
-    return acc;
-  }, {});
-  const manifest = {
-    jobId,
-    input: path.relative(root, inputPath),
-    createdAt: new Date().toISOString(),
-    dry: args.dry,
-    total: records.length,
-    summary,
-    records,
-  };
-  await writeFile(path.join(jobDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-
-  const qcReport = records.map((r) => ({id: r.id, status: r.status, ...r.qc}));
-  await writeFile(path.join(jobDir, 'qc-report.json'), `${JSON.stringify(qcReport, null, 2)}\n`, 'utf8');
-
-  // 控制台汇总。
   console.log(`\n=== 批量完成：${jobId} ===`);
   console.log(`输出目录：${path.relative(root, jobDir)}`);
   console.log(`统计：${JSON.stringify(summary)}`);
   const warned = records.filter((r) => r.qc.warnings.length > 0);
-  if (warned.length > 0) {
-    console.log(`质检警告：${warned.length} 条（详见 qc-report.json）`);
-  }
-  if (summary.failed) {
-    process.exitCode = 1;
-  }
+  if (warned.length > 0) console.log(`质检警告：${warned.length} 条（详见 qc-report.json）`);
+  if (summary.failed) process.exitCode = 1;
 };
 
 main().catch((error) => {

@@ -41,6 +41,18 @@ const INITIAL: Form = {
   subEn: 'Five classics tonight',
 };
 
+const SAMPLE_BATCH = JSON.stringify(
+  [
+    {id: 'demo-classic', template: 'classic', mainTitle: '月亮与六便士', mainAuthor: '毛姆', mainZh: '满地都是六便士，他却抬头看见了月亮', flashBooks: '了不起的盖茨比 | 菲茨杰拉德 | 简爱 | 夏洛蒂 | 瓦尔登湖 | 梭罗'},
+    {id: 'demo-drama', template: 'drama', mainTitle: '东方快车谋杀案', mainAuthor: '阿加莎', mainZh: '真相只有一个', flashBooks: '福尔摩斯探案集 | 柯南道尔 | 无人生还 | 阿加莎 | 白夜行 | 东野圭吾'},
+  ],
+  null,
+  2,
+);
+
+type BatchRecord = {index: number; id: string; status: string; qc?: {warnings: string[]; infos: string[]}; url?: string; ms?: number; error?: string};
+const STATUS_LABEL: Record<string, string> = {queued: '排队中', rendering: '渲染中', rendered: '完成', failed: '失败', 'qc-failed': '质检未过'};
+
 // 默认节奏卡点（与 scripts/batch/lib/row-to-config.mjs 的 defaultCutFrames 一致）。
 const defaultCutFrames = (count: number): number[] => {
   const start = 134;
@@ -143,8 +155,107 @@ export const App: React.FC = () => {
     }
   };
 
+  // 批量队列
+  const [view, setView] = useState<'edit' | 'batch'>(() =>
+    typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'batch' ? 'batch' : 'edit',
+  );
+  const [batchText, setBatchText] = useState(SAMPLE_BATCH);
+  const [batch, setBatch] = useState<{jobId?: string; records: BatchRecord[]; running: boolean}>({records: [], running: false});
+  useEffect(() => {
+    if (!batch.jobId || !batch.running) return undefined;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/batch/${batch.jobId}`);
+        const data = await res.json();
+        setBatch((b) => ({...b, records: data.records || [], running: data.running}));
+      } catch {
+        /* 忽略单次轮询失败 */
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [batch.jobId, batch.running]);
+  const startBatch = async () => {
+    let videos: unknown;
+    try {
+      videos = JSON.parse(batchText);
+    } catch {
+      alert('批量数据不是合法 JSON');
+      return;
+    }
+    try {
+      const res = await fetch('/api/batch', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({videos})});
+      const data = await res.json();
+      if (data.jobId) setBatch({jobId: data.jobId, records: [], running: true});
+      else alert(data.error || '启动失败');
+    } catch (e) {
+      alert(String(e));
+    }
+  };
+  const useCurrentInBatch = () => {
+    setBatchText(JSON.stringify([{id: form.mainTitle || 'video', ...raw}], null, 2));
+  };
+  const doneCount = batch.records.filter((r) => r && ['rendered', 'failed', 'qc-failed'].includes(r.status)).length;
+
+  const batchView = (
+    <div style={{padding: 24, width: '100%', maxWidth: 960, margin: '0 auto', boxSizing: 'border-box'}}>
+      <h2 style={{fontSize: 17, margin: '0 0 6px'}}>批量渲染队列</h2>
+      <div style={{fontSize: 13, color: '#8a93a0', marginBottom: 10}}>
+        粘贴批量数据（JSON 数组，字段同 <code>config/batch/sample.json</code>），逐条排队渲染并显示进度与质检。
+      </div>
+      <textarea value={batchText} onChange={(e) => setBatchText(e.target.value)} style={{width: '100%', height: 150, boxSizing: 'border-box', padding: 10, border: '1px solid #d3d9e0', borderRadius: 8, fontFamily: 'ui-monospace, monospace', fontSize: 12}} />
+      <div style={{display: 'flex', gap: 10, alignItems: 'center', margin: '10px 0 18px'}}>
+        <button onClick={startBatch} disabled={!apiOk || batch.running} style={{padding: '9px 16px', border: 'none', borderRadius: 8, background: !apiOk || batch.running ? '#9bb4e8' : '#16a34a', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer'}}>
+          {batch.running ? `渲染中… ${doneCount}/${batch.records.length}` : '开始批量渲染'}
+        </button>
+        <button onClick={useCurrentInBatch} style={{padding: '9px 14px', border: '1px solid #cdd5df', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer'}}>
+          用当前编辑配置
+        </button>
+        {!apiOk ? <span style={{fontSize: 12, color: '#8a93a0'}}>需本地服务（npm run server）</span> : null}
+      </div>
+
+      {batch.records.length > 0 ? (
+        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 13}}>
+          <thead>
+            <tr style={{textAlign: 'left', color: '#6b7480', borderBottom: '2px solid #e6eaf0'}}>
+              <th style={{padding: '8px 6px'}}>#</th>
+              <th style={{padding: '8px 6px'}}>ID</th>
+              <th style={{padding: '8px 6px'}}>状态</th>
+              <th style={{padding: '8px 6px'}}>质检</th>
+              <th style={{padding: '8px 6px'}}>产物</th>
+            </tr>
+          </thead>
+          <tbody>
+            {batch.records.map((r, i) => (
+              <tr key={i} style={{borderBottom: '1px solid #eef1f5'}}>
+                <td style={{padding: '8px 6px', color: '#9aa4b0'}}>{i + 1}</td>
+                <td style={{padding: '8px 6px'}}>{r?.id ?? '—'}</td>
+                <td style={{padding: '8px 6px', color: r?.status === 'rendered' ? '#16a34a' : r?.status === 'failed' || r?.status === 'qc-failed' ? '#d33' : '#2f6bff'}}>
+                  {r ? STATUS_LABEL[r.status] || r.status : '等待'}
+                  {r?.ms ? <span style={{color: '#9aa4b0'}}> · {(r.ms / 1000).toFixed(1)}s</span> : null}
+                </td>
+                <td style={{padding: '8px 6px', color: '#b07d2b'}}>{r?.qc && r.qc.warnings.length ? `${r.qc.warnings.length} 警告` : r?.error ? r.error : '—'}</td>
+                <td style={{padding: '8px 6px'}}>{r?.url ? (<a href={r.url} target="_blank" rel="noreferrer" style={{color: '#2f6bff'}}>播放</a>) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
+  );
+
+  const tabBtn = (v: 'edit' | 'batch', label: string) => (
+    <button onClick={() => setView(v)} style={{padding: '10px 16px', border: 'none', borderBottom: view === v ? '2px solid #2f6bff' : '2px solid transparent', background: 'transparent', fontSize: 14, fontWeight: 600, color: view === v ? '#2f6bff' : '#6b7480', cursor: 'pointer'}}>
+      {label}
+    </button>
+  );
+
   return (
-    <div style={{display: 'flex', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#1b2430'}}>
+    <div style={{display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#1b2430'}}>
+      <div style={{display: 'flex', gap: 4, padding: '0 16px', borderBottom: '1px solid #e6eaf0', background: '#fff', flexShrink: 0}}>
+        {tabBtn('edit', '编辑器')}
+        {tabBtn('batch', '批量队列')}
+      </div>
+      <div style={{display: view === 'edit' ? 'flex' : 'none', flex: 1, minHeight: 0}}>
       {/* 编辑面板 */}
       <div style={{width: 380, padding: '20px 22px', overflowY: 'auto', borderRight: '1px solid #e6eaf0', background: '#f7f9fc'}}>
         <h1 style={{fontSize: 18, margin: '0 0 4px'}}>书籍短视频编辑器</h1>
@@ -256,6 +367,10 @@ export const App: React.FC = () => {
         <pre id="export-json" style={{flex: 1, margin: 0, overflow: 'auto', background: '#0f1620', color: '#cfe3ff', padding: 12, borderRadius: 8, fontSize: 11, lineHeight: 1.5}}>
           {exportJson}
         </pre>
+      </div>
+      </div>
+      <div style={{display: view === 'batch' ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'auto', background: '#f7f9fc'}}>
+        {batchView}
       </div>
     </div>
   );

@@ -15,8 +15,13 @@ import {existsSync, createReadStream} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {getBundle, renderJob} from './batch/lib/render-core.mjs';
+import {runBatch} from './batch/lib/run-batch.mjs';
+import {loadAssets} from './lib/assets.mjs';
 
 const root = process.cwd();
+const assets = loadAssets(path.join(process.cwd(), 'config', 'assets.example.json'));
+// 内存批量队列：jobId -> {jobId, total, records[], running, error}
+const batchJobs = new Map();
 const PORT = Number(process.env.PORT) || 4000;
 const browserExecutable = process.env.BROWSER_EXECUTABLE || undefined;
 
@@ -133,6 +138,50 @@ const handleRenders = async (res) => {
   return sendJson(res, 200, {renders});
 };
 
+const relUrl = (output) => (output ? `/${output.split(path.sep).join('/')}` : undefined);
+
+const handleBatchStart = async (req, res) => {
+  const body = JSON.parse(await readBody(req));
+  const videos = Array.isArray(body.videos) ? body.videos : Array.isArray(body) ? body : [];
+  if (videos.length === 0) return sendJson(res, 400, {ok: false, error: '缺少 videos 数组'});
+
+  const jobId = `batch-${Date.now()}`;
+  const outDir = path.join(editorOutDir, jobId);
+  const state = {jobId, total: videos.length, records: new Array(videos.length).fill(null), running: true};
+  batchJobs.set(jobId, state);
+
+  console.log(`[batch] ${jobId} 启动，共 ${videos.length} 条`);
+  runBatch({
+    rows: videos,
+    root,
+    assets,
+    browserExecutable,
+    concurrency: Number(body.concurrency) || 1,
+    retries: 1,
+    outDir,
+    onProgress: (p) => {
+      state.records[p.index] = {...p, url: relUrl(p.output)};
+    },
+  })
+    .then(() => {
+      state.running = false;
+      console.log(`[batch] ${jobId} 完成`);
+    })
+    .catch((error) => {
+      state.running = false;
+      state.error = error.message;
+      console.error(`[batch] ${jobId} 出错：${error.message}`);
+    });
+
+  return sendJson(res, 200, {ok: true, jobId, total: videos.length});
+};
+
+const handleBatchStatus = (res, jobId) => {
+  const state = batchJobs.get(jobId);
+  if (!state) return sendJson(res, 404, {ok: false, error: '未找到该批量任务'});
+  return sendJson(res, 200, state);
+};
+
 const handleAssets = async (res) => {
   const p = path.join(root, 'config', 'assets.example.json');
   if (!existsSync(p)) return sendJson(res, 200, {});
@@ -151,6 +200,8 @@ const server = createServer(async (req, res) => {
     if (url === '/api/assets') return handleAssets(res);
     if (url.startsWith('/api/renders')) return handleRenders(res);
     if (url === '/api/render' && req.method === 'POST') return handleRender(req, res);
+    if (url === '/api/batch' && req.method === 'POST') return handleBatchStart(req, res);
+    if (url.startsWith('/api/batch/')) return handleBatchStatus(res, url.slice('/api/batch/'.length).split('?')[0]);
 
     const filePath = resolveStatic(url);
     if (!filePath) {
