@@ -87,6 +87,21 @@ type BatchState = {
   waitingIndex?: number | null;
   retrying: number[];
 };
+
+type View = 'edit' | 'assets' | 'tasks' | 'batch' | 'settings';
+type AssetKind = 'covers' | 'backgrounds' | 'introVideos' | 'audio';
+type AssetItem = {kind: AssetKind; name: string; path: string; url: string; bytes?: number; mtime?: number; mime?: string};
+type AssetLibrary = Record<AssetKind, AssetItem[]>;
+type RenderItem = {url: string; bytes?: number; mtime?: number};
+
+const EMPTY_LIBRARY: AssetLibrary = {covers: [], backgrounds: [], introVideos: [], audio: []};
+const ASSET_KIND_META: Record<AssetKind, {label: string; hint: string; accept: string}> = {
+  covers: {label: '书籍封面', hint: '主书与快闪书单封面', accept: 'image/png,image/jpeg,image/webp'},
+  backgrounds: {label: '背景图', hint: '快闪背景、主书背景、开场背景', accept: 'image/png,image/jpeg,image/webp'},
+  introVideos: {label: '开场视频', hint: '视频开头可替换片段', accept: 'video/mp4,video/webm,video/quicktime'},
+  audio: {label: '背景音乐', hint: '配乐与卡点检测音频', accept: 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg'},
+};
+const ASSET_KINDS: AssetKind[] = ['covers', 'backgrounds', 'introVideos', 'audio'];
 const STATUS_LABEL: Record<string, string> = {queued: '排队中', paused: '已暂停', rendering: '渲染中', rendered: '完成', failed: '失败', 'qc-failed': '质检未过'};
 const RETRYABLE_BATCH_STATUSES = new Set(['failed', 'qc-failed']);
 
@@ -227,6 +242,19 @@ const publicAssetUrl = (assetPath: string): string => {
   return `/${assetPath.replace(/^public\//, '').replace(/^\/+/, '')}`;
 };
 
+const formatBytes = (bytes?: number): string => {
+  if (!Number.isFinite(bytes)) return '';
+  if ((bytes as number) >= 1048576) return `${((bytes as number) / 1048576).toFixed(1)} MB`;
+  if ((bytes as number) >= 1024) return `${Math.round((bytes as number) / 1024)} KB`;
+  return `${bytes} B`;
+};
+
+const viewFromUrl = (): View => {
+  if (typeof location === 'undefined') return 'edit';
+  const value = new URLSearchParams(location.search).get('view');
+  return value === 'assets' || value === 'tasks' || value === 'batch' || value === 'settings' ? value : 'edit';
+};
+
 // 支持通过 URL 预填初始表单，便于分享带预设的编辑器链接（如 ?template=drama&title=...）。
 const initialForm = (): Form => {
   if (typeof location === 'undefined') return INITIAL;
@@ -271,18 +299,41 @@ export const App: React.FC = () => {
   const [upload, setUpload] = useState<{status: 'idle' | 'uploading' | 'done' | 'error'; message?: string}>({status: 'idle'});
   const [beats, setBeats] = useState<{status: 'idle' | 'detecting' | 'done' | 'error'; count?: number; error?: string}>({status: 'idle'});
   const [coverLookup, setCoverLookup] = useState<{status: 'idle' | 'querying' | 'done' | 'placeholder' | 'error'; message?: string}>({status: 'idle'});
+  const [assetLibrary, setAssetLibrary] = useState<AssetLibrary>(EMPTY_LIBRARY);
+  const [libraryStatus, setLibraryStatus] = useState<{status: 'idle' | 'loading' | 'ready' | 'error'; message?: string}>({status: 'idle'});
   useEffect(() => {
     fetch('/api/health')
       .then((r) => setApiOk(r.ok))
       .catch(() => setApiOk(false));
   }, []);
+
+  const loadAssetLibrary = async () => {
+    if (!apiOk) return;
+    setLibraryStatus({status: 'loading'});
+    try {
+      const res = await fetch('/api/assets');
+      const data = await res.json();
+      const next = {...EMPTY_LIBRARY, ...(data.assets || {})} as AssetLibrary;
+      setAssetLibrary(next);
+      setLibraryStatus({status: 'ready'});
+    } catch (error) {
+      setLibraryStatus({status: 'error', message: String(error)});
+    }
+  };
+
+  useEffect(() => {
+    if (apiOk) void loadAssetLibrary();
+  }, [apiOk]);
+
   const renderNow = async () => {
     setRender({status: 'rendering'});
     try {
       const res = await fetch('/api/render', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id: form.mainTitle, ...raw})});
       const data = await res.json();
-      if (data.ok) setRender({status: 'done', url: data.url});
-      else setRender({status: 'error', error: data.error || '渲染失败'});
+      if (data.ok) {
+        setRender({status: 'done', url: data.url});
+        void refreshTasks();
+      } else setRender({status: 'error', error: data.error || '渲染失败'});
     } catch (e) {
       setRender({status: 'error', error: String(e)});
     }
@@ -305,11 +356,20 @@ export const App: React.FC = () => {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || '上传失败');
       setUpload({status: 'done', message: data.path});
+      void loadAssetLibrary();
       return data.path;
     } catch (error) {
       setUpload({status: 'error', message: String(error)});
       return null;
     }
+  };
+
+  const uploadManyAssets = async (kind: AssetKind, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      await uploadAsset(kind, file);
+    }
+    void loadAssetLibrary();
   };
 
   const uploadToField = async <K extends keyof Form>(kind: 'covers' | 'backgrounds' | 'introVideos' | 'audio', key: K, file: File | null | undefined) => {
@@ -358,6 +418,7 @@ export const App: React.FC = () => {
       if (data.coverPath) {
         set('mainCoverPath', data.coverPath);
         setCoverLookup({status: 'done', message: `封面来源：${data.coverSource}`});
+        void loadAssetLibrary();
       } else {
         setCoverLookup({status: 'placeholder', message: '未找到真实封面，已保持生成式封面降级'});
       }
@@ -389,9 +450,7 @@ export const App: React.FC = () => {
   };
 
   // 批量队列
-  const [view, setView] = useState<'edit' | 'batch'>(() =>
-    typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'batch' ? 'batch' : 'edit',
-  );
+  const [view, setView] = useState<View>(viewFromUrl);
   const [batchText, setBatchText] = useState(SAMPLE_BATCH);
   const [batch, setBatch] = useState<BatchState>({records: [], running: false, paused: false, retrying: []});
   useEffect(() => {
@@ -461,13 +520,169 @@ export const App: React.FC = () => {
 
   // 批量历史（服务端归档，重启后仍可见）
   const [batches, setBatches] = useState<{jobId: string; total?: number; summary?: Record<string, number>; running?: boolean; paused?: boolean; status?: string; createdAt?: string}[]>([]);
+  const [renders, setRenders] = useState<RenderItem[]>([]);
+  const refreshTasks = async () => {
+    if (!apiOk) return;
+    try {
+      const [renderRes, batchRes] = await Promise.all([fetch('/api/renders'), fetch('/api/batches')]);
+      const renderData = await renderRes.json();
+      const batchData = await batchRes.json();
+      setRenders(Array.isArray(renderData.renders) ? renderData.renders : []);
+      setBatches(Array.isArray(batchData.batches) ? batchData.batches : []);
+    } catch {
+      /* 任务中心刷新失败不影响编辑器 */
+    }
+  };
   useEffect(() => {
-    if (view !== 'batch' || !apiOk) return;
-    fetch('/api/batches')
-      .then((r) => r.json())
-      .then((d) => setBatches(d.batches || []))
-      .catch(() => undefined);
+    if ((view === 'batch' || view === 'tasks') && apiOk) void refreshTasks();
   }, [view, apiOk, batch.running]);
+
+  const assetItems = (kind: AssetKind) => assetLibrary[kind] || [];
+  const assetLabel = (item: AssetItem) => `${item.name}${item.bytes ? ` · ${formatBytes(item.bytes)}` : ''}`;
+
+  const assetPicker = (kind: AssetKind, value: string, onChange: (value: string) => void, emptyLabel = '不选择素材') => {
+    const items = assetItems(kind);
+    const hasCurrent = value && items.some((item) => item.path === value);
+    return (
+      <select style={{...inputStyle, flex: 1}} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{emptyLabel}</option>
+        {value && !hasCurrent ? <option value={value}>当前路径：{value}</option> : null}
+        {items.map((item) => (
+          <option key={item.path} value={item.path}>
+            {assetLabel(item)}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
+  const assetPreview = (item: AssetItem) => {
+    if (item.kind === 'covers' || item.kind === 'backgrounds') {
+      return <img src={item.url} alt={item.name} style={{width: '100%', height: '100%', objectFit: 'cover'}} />;
+    }
+    if (item.kind === 'introVideos') {
+      return <video src={item.url} muted style={{width: '100%', height: '100%', objectFit: 'cover', background: '#101827'}} />;
+    }
+    return <div style={{fontSize: 22, color: '#6d7890'}}>♪</div>;
+  };
+
+  const libraryCount = ASSET_KINDS.reduce((total, kind) => total + assetItems(kind).length, 0);
+
+  const assetLibraryView = (
+    <div style={{padding: 24, overflow: 'auto', flex: 1}}>
+      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16}}>
+        <div>
+          <h2 style={{fontSize: 22, margin: '0 0 6px'}}>素材库</h2>
+          <div style={{fontSize: 13, color: '#6d7890'}}>先把常用素材批量放进这里，再回到主界面从下拉框选择。</div>
+        </div>
+        <button type="button" onClick={loadAssetLibrary} disabled={!apiOk || libraryStatus.status === 'loading'} style={{...softButtonStyle, background: '#fff'}}>
+          {libraryStatus.status === 'loading' ? '刷新中' : `刷新素材（${libraryCount}）`}
+        </button>
+      </div>
+      {libraryStatus.status === 'error' ? <div style={{fontSize: 12, color: '#d33', marginBottom: 12}}>{libraryStatus.message}</div> : null}
+      <div style={{display: 'grid', gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))', gap: 16}}>
+        {ASSET_KINDS.map((kind) => {
+          const meta = ASSET_KIND_META[kind];
+          const items = assetItems(kind);
+          return (
+            <section key={kind} style={{background: '#fff', border: '1px solid #e5eaf3', padding: 16}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12}}>
+                <div>
+                  <h3 style={{fontSize: 18, margin: 0}}>{meta.label}</h3>
+                  <div style={{fontSize: 12, color: '#6d7890', marginTop: 3}}>{meta.hint}</div>
+                </div>
+                <label style={{...softButtonStyle, marginLeft: 'auto'}}>
+                  批量上传
+                  <input type="file" multiple accept={meta.accept} disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadManyAssets(kind, e.target.files)} style={{display: 'none'}} />
+                </label>
+              </div>
+              {items.length === 0 ? (
+                <div style={{height: 122, border: '1px dashed #ccd5e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a93a0', fontSize: 13}}>暂无素材</div>
+              ) : (
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 10}}>
+                  {items.map((item) => (
+                    <div key={item.path} style={{border: '1px solid #e1e6ee', background: '#fff'}}>
+                      <div style={{height: 92, background: '#eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'}}>{assetPreview(item)}</div>
+                      <div style={{padding: 8}}>
+                        <div title={item.name} style={{fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{item.name}</div>
+                        <div style={{fontSize: 11, color: '#8a93a0', marginTop: 3}}>{formatBytes(item.bytes)}</div>
+                        <button type="button" onClick={() => navigator.clipboard?.writeText(item.path).catch(() => undefined)} style={{...softButtonStyle, padding: '5px 8px', marginTop: 8, width: '100%'}}>
+                          复制路径
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const taskCenterView = (
+    <div style={{padding: 24, overflow: 'auto', flex: 1}}>
+      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16}}>
+        <div>
+          <h2 style={{fontSize: 22, margin: '0 0 6px'}}>任务中心</h2>
+          <div style={{fontSize: 13, color: '#6d7890'}}>集中查看单条生成结果、批量任务进度、失败原因和重试入口。</div>
+        </div>
+        <button type="button" onClick={refreshTasks} disabled={!apiOk} style={{...softButtonStyle, background: '#fff'}}>刷新任务</button>
+      </div>
+      <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 16, marginBottom: 16}}>
+        <h3 style={{fontSize: 18, margin: '0 0 10px'}}>最近生成的视频</h3>
+        {renders.length === 0 ? (
+          <div style={{fontSize: 13, color: '#8a93a0'}}>暂无生成记录。</div>
+        ) : (
+          <div style={{display: 'grid', gap: 8}}>
+            {renders.slice(0, 20).map((item) => (
+              <div key={item.url} style={{display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid #eef1f5', padding: '7px 0', fontSize: 13}}>
+                <a href={item.url} target="_blank" rel="noreferrer" style={{color: '#2f6bff', fontWeight: 700}}>播放视频</a>
+                <span style={{color: '#6d7890', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{item.url}</span>
+                <span style={{marginLeft: 'auto', color: '#8a93a0'}}>{formatBytes(item.bytes)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 16}}>
+        <h3 style={{fontSize: 18, margin: '0 0 10px'}}>批量任务</h3>
+        {batches.length === 0 ? (
+          <div style={{fontSize: 13, color: '#8a93a0'}}>暂无批量任务。</div>
+        ) : (
+          <div style={{display: 'grid', gap: 8}}>
+            {batches.map((b) => (
+              <div key={b.jobId} style={{display: 'flex', gap: 12, fontSize: 13, color: '#6b7480', padding: '8px 0', borderBottom: '1px solid #eef1f5'}}>
+                <span style={{fontFamily: 'ui-monospace, monospace', color: '#101a36'}}>{b.jobId}</span>
+                <span>{b.running ? (b.paused ? '已暂停' : '进行中') : b.summary ? Object.entries(b.summary).map(([k, v]) => `${k}:${v}`).join('  ') : b.status || '—'}</span>
+                <span style={{color: '#9aa4b0', marginLeft: 'auto'}}>{b.createdAt ? b.createdAt.slice(0, 19).replace('T', ' ') : ''}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  const settingsView = (
+    <div style={{padding: 24, overflow: 'auto', flex: 1}}>
+      <section style={{background: '#fff', border: '1px solid #e5eaf3', padding: 18, maxWidth: 900}}>
+        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+          <div>
+            <h2 style={{fontSize: 22, margin: '0 0 6px'}}>高级配置</h2>
+            <div style={{fontSize: 13, color: '#6d7890'}}>导出当前视频配置，供批量生产或排查问题使用。</div>
+          </div>
+          <button id="copy-btn" onClick={copyExport} style={{padding: '8px 16px', border: 'none', borderRadius: 6, background: '#2f6bff', color: '#fff', fontSize: 13, cursor: 'pointer'}}>
+            复制配置
+          </button>
+        </div>
+        <pre id="export-json" style={{height: 560, margin: '16px 0 0', overflow: 'auto', background: '#0f1620', color: '#cfe3ff', padding: 14, borderRadius: 8, fontSize: 11, lineHeight: 1.5}}>
+          {exportJson}
+        </pre>
+      </section>
+    </div>
+  );
 
   const batchView = (
     <div style={{padding: 24, width: '100%', maxWidth: 960, margin: '0 auto', boxSizing: 'border-box'}}>
@@ -547,9 +762,16 @@ export const App: React.FC = () => {
     </div>
   );
 
-  const primaryAction = view === 'batch' ? startBatch : renderNow;
-  const primaryDisabled = view === 'batch' ? !apiOk || batch.running : !apiOk || render.status === 'rendering';
-  const stopDisabled = view !== 'batch' || !apiOk || !batch.jobId || !batch.running || batch.paused;
+  const viewCopy: Record<View, {title: string; subtitle: string}> = {
+    edit: {title: '书籍短视频模板', subtitle: '填写书籍内容，从素材库选择素材，预览并生成竖屏 MP4。'},
+    assets: {title: '素材库', subtitle: '批量上传和管理封面、背景、开场视频与音乐素材。'},
+    tasks: {title: '任务中心', subtitle: '查看生成记录、批量任务、失败原因与重试入口。'},
+    batch: {title: '批量生产', subtitle: '导入批量数据，排队渲染并查看每条任务状态。'},
+    settings: {title: '设置', subtitle: '管理高级配置、导出 JSON 和后续客户端参数。'},
+  };
+  const primaryAction = view === 'batch' ? startBatch : view === 'edit' ? renderNow : undefined;
+  const primaryDisabled = view === 'batch' ? !apiOk || batch.running : view === 'edit' ? !apiOk || render.status === 'rendering' : true;
+  const stopDisabled = !apiOk || !batch.jobId || !batch.running || batch.paused;
 
   return (
     <div style={{display: 'flex', height: '100vh', fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif', color: '#101a36', background: '#f1f4fa'}}>
@@ -572,23 +794,27 @@ export const App: React.FC = () => {
         <div style={{display: 'grid', gap: 8}}>
           <button type="button" onClick={() => setView('edit')} style={sidebarButtonStyle(view === 'edit')}>
             <div style={{fontWeight: 700}}>视频模板制作</div>
-            <div style={{fontSize: 12, color: '#dbe7ff'}}>书封快闪、主书页、字幕与素材</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>内容填写、素材选择、预览生成</div>
           </button>
           <button type="button" onClick={() => setView('batch')} style={sidebarButtonStyle(view === 'batch')}>
-            <div style={{fontWeight: 700}}>批量生产队列</div>
+            <div style={{fontWeight: 700}}>批量生产</div>
             <div style={{fontSize: 12, color: '#dbe7ff'}}>读取 JSON/CSV 批量渲染</div>
           </button>
         </div>
 
         <div style={{fontSize: 13, color: '#73c7ff', margin: '30px 0 10px'}}>通用操作</div>
         <div style={{display: 'grid', gap: 8}}>
-          <button type="button" onClick={() => setView('edit')} style={sidebarButtonStyle(false)}>
-            <div style={{fontWeight: 700}}>素材替换</div>
-            <div style={{fontSize: 12, color: '#dbe7ff'}}>封面、背景、开场视频、音乐</div>
+          <button type="button" onClick={() => setView('assets')} style={sidebarButtonStyle(view === 'assets')}>
+            <div style={{fontWeight: 700}}>素材库</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>批量上传、预览、复制路径</div>
           </button>
-          <button type="button" onClick={() => setView('batch')} style={sidebarButtonStyle(false)}>
-            <div style={{fontWeight: 700}}>任务列表</div>
+          <button type="button" onClick={() => setView('tasks')} style={sidebarButtonStyle(view === 'tasks')}>
+            <div style={{fontWeight: 700}}>任务中心</div>
             <div style={{fontSize: 12, color: '#dbe7ff'}}>进度、失败原因、重试</div>
+          </button>
+          <button type="button" onClick={() => setView('settings')} style={sidebarButtonStyle(view === 'settings')}>
+            <div style={{fontWeight: 700}}>设置</div>
+            <div style={{fontSize: 12, color: '#dbe7ff'}}>导出配置、高级选项</div>
           </button>
         </div>
 
@@ -596,24 +822,28 @@ export const App: React.FC = () => {
         <div style={{marginTop: 'auto', fontSize: 13, lineHeight: 1.9}}>
           <div style={{color: '#9fc5ff'}}>当前状态</div>
           <div style={{fontWeight: 700}}>{apiOk ? '本地服务运行中' : '等待本地服务'}</div>
-          <div style={{color: '#9aa7d7'}}>v0.2.0</div>
+          <div style={{color: '#9aa7d7'}}>v0.2.1</div>
         </div>
       </aside>
 
       <main style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
       <div style={{height: 118, padding: '28px 24px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0}}>
         <div>
-          <h1 style={{fontSize: 30, margin: '0 0 8px', color: '#101a36'}}>{view === 'edit' ? '书籍短视频模板' : '批量生产队列'}</h1>
-          <div style={{fontSize: 13, color: '#52607a'}}>{view === 'edit' ? '输入书籍信息，替换素材，预览并生成竖屏 MP4。' : '导入批量数据，查看渲染进度、失败原因与输出位置。'}</div>
+          <h1 style={{fontSize: 30, margin: '0 0 8px', color: '#101a36'}}>{viewCopy[view].title}</h1>
+          <div style={{fontSize: 13, color: '#52607a'}}>{viewCopy[view].subtitle}</div>
         </div>
-        <div style={{display: 'flex', gap: 10}}>
-          <button type="button" onClick={primaryAction} disabled={primaryDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: primaryDisabled ? '#9bb4e8' : '#6d45f5', color: '#fff', fontSize: 14, fontWeight: 700, cursor: primaryDisabled ? 'default' : 'pointer'}}>
-            {view === 'batch' ? '全部开始' : render.status === 'rendering' ? '生成中' : '开始生成'}
-          </button>
-          <button type="button" onClick={() => controlBatch('pause')} disabled={stopDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: stopDisabled ? '#f7dfdd' : '#ffd9d6', color: '#b53027', fontSize: 14, fontWeight: 700, cursor: stopDisabled ? 'default' : 'pointer'}}>
-            停止全部
-          </button>
-        </div>
+        {primaryAction ? (
+          <div style={{display: 'flex', gap: 10}}>
+            <button type="button" onClick={primaryAction} disabled={primaryDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: primaryDisabled ? '#9bb4e8' : '#6d45f5', color: '#fff', fontSize: 14, fontWeight: 700, cursor: primaryDisabled ? 'default' : 'pointer'}}>
+              {view === 'batch' ? (batch.running ? '批量生成中' : '开始批量') : render.status === 'rendering' ? '生成中' : '生成当前视频'}
+            </button>
+            {view === 'batch' ? (
+              <button type="button" onClick={() => controlBatch('pause')} disabled={stopDisabled} style={{padding: '12px 34px', border: 'none', borderRadius: 0, background: stopDisabled ? '#f7dfdd' : '#ffd9d6', color: '#b53027', fontSize: 14, fontWeight: 700, cursor: stopDisabled ? 'default' : 'pointer'}}>
+                暂停批量
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div style={{display: view === 'edit' ? 'flex' : 'none', flex: 1, minHeight: 0, gap: 14, padding: '0 24px 22px'}}>
       {/* 编辑面板 */}
@@ -633,9 +863,9 @@ export const App: React.FC = () => {
             ))}
           </select>
         </Field>
-        <Field label="背景音乐（相对 public 路径或远程链接）">
+        <Field label="背景音乐">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.audio} onChange={(e) => set('audio', e.target.value)} />
+            {assetPicker('audio', form.audio, (value) => set('audio', value), '不使用音乐')}
             <label style={softButtonStyle}>
               上传
               <input type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('audio', 'audio', e.target.files?.[0])} style={{display: 'none'}} />
@@ -644,7 +874,7 @@ export const App: React.FC = () => {
         </Field>
         <Field label="快闪段背景图">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.flashBackgroundPath} onChange={(e) => set('flashBackgroundPath', e.target.value)} placeholder="backgrounds/flash.jpg" />
+            {assetPicker('backgrounds', form.flashBackgroundPath, (value) => set('flashBackgroundPath', value), '使用模板默认背景')}
             <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'flashBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
@@ -671,7 +901,7 @@ export const App: React.FC = () => {
         </Field>
         <Field label="主书 · 本地封面">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.mainCoverPath} onChange={(e) => set('mainCoverPath', e.target.value)} placeholder="covers/book.jpg" />
+            {assetPicker('covers', form.mainCoverPath, (value) => set('mainCoverPath', value), '使用生成式封面')}
             <label style={softButtonStyle}>
               {upload.status === 'uploading' ? '上传中' : '上传'}
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('covers', 'mainCoverPath', e.target.files?.[0])} style={{display: 'none'}} />
@@ -687,7 +917,7 @@ export const App: React.FC = () => {
         </Field>
         <Field label="主书 · 背景图">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.mainBackgroundPath} onChange={(e) => set('mainBackgroundPath', e.target.value)} placeholder="backgrounds/main.jpg" />
+            {assetPicker('backgrounds', form.mainBackgroundPath, (value) => set('mainBackgroundPath', value), '使用模板默认背景')}
             <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'mainBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
@@ -722,7 +952,7 @@ export const App: React.FC = () => {
                     <div style={{fontSize: 12, fontWeight: 700, color: '#1b2430', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
                       {index + 1}. {book.title}
                     </div>
-                    <input style={{...inputStyle, marginTop: 6, padding: '6px 8px', fontSize: 12}} value={book.coverPath || ''} onChange={(e) => updateFlashBook(index, {coverPath: e.target.value})} placeholder="covers/book.jpg" />
+                    <div style={{marginTop: 6}}>{assetPicker('covers', book.coverPath || '', (value) => updateFlashBook(index, {coverPath: value}), '使用生成式封面')}</div>
                   </div>
                   <label style={softButtonStyle}>
                     上传
@@ -755,7 +985,7 @@ export const App: React.FC = () => {
         </div>
         <Field label="开场视频">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.introVideoPath} onChange={(e) => set('introVideoPath', e.target.value)} placeholder="intro-videos/opening.mp4" />
+            {assetPicker('introVideos', form.introVideoPath, (value) => set('introVideoPath', value), '不使用本地开场视频')}
             <label style={softButtonStyle}>
               上传
               <input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('introVideos', 'introVideoPath', e.target.files?.[0])} style={{display: 'none'}} />
@@ -764,7 +994,7 @@ export const App: React.FC = () => {
         </Field>
         <Field label="开场生成背景图">
           <div style={{display: 'flex', gap: 8}}>
-            <input style={{...inputStyle, flex: 1}} value={form.introBackgroundPath} onChange={(e) => set('introBackgroundPath', e.target.value)} placeholder="backgrounds/intro.jpg" />
+            {assetPicker('backgrounds', form.introBackgroundPath, (value) => set('introBackgroundPath', value), '使用生成式默认背景')}
             <label style={softButtonStyle}>
               上传
               <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!apiOk || upload.status === 'uploading'} onChange={(e) => uploadToField('backgrounds', 'introBackgroundPath', e.target.files?.[0])} style={{display: 'none'}} />
@@ -778,7 +1008,7 @@ export const App: React.FC = () => {
       </div>
 
       {/* 预览 */}
-      <div style={{flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#101827', border: '1px solid #e5eaf3'}}>
+      <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: '#101827', border: '1px solid #e5eaf3', padding: 18}}>
         <div style={{boxShadow: '0 20px 60px rgba(0,0,0,0.5)', borderRadius: 12, overflow: 'hidden'}}>
           <Player
             component={BookIntroFromConfig}
@@ -793,49 +1023,28 @@ export const App: React.FC = () => {
             loop
           />
         </div>
-      </div>
-
-      {/* 渲染 + 导出 */}
-      <div style={{width: 340, padding: '20px 18px', border: '1px solid #e5eaf3', background: '#fff', display: 'flex', flexDirection: 'column'}}>
-        <h2 style={{fontSize: 24, margin: '0 0 16px'}}>渲染设置</h2>
-        {apiOk ? (
-          <button
-            id="render-btn"
-            onClick={renderNow}
-            disabled={render.status === 'rendering'}
-            style={{padding: '9px 12px', border: 'none', borderRadius: 8, background: render.status === 'rendering' ? '#9bb4e8' : '#16a34a', color: '#fff', fontSize: 14, cursor: 'pointer', fontWeight: 600}}
-          >
-            {render.status === 'rendering' ? '渲染中…（约 15s）' : '渲染此配置为 MP4'}
-          </button>
-        ) : (
-          <div style={{fontSize: 12, color: '#8a93a0', lineHeight: 1.6}}>
-            未连接本地服务。运行 <code>npm run gui:build</code> 后 <code>node scripts/server.mjs</code>，用 :4000 打开即可一键渲染。
-          </div>
-        )}
         {render.status === 'done' && render.url ? (
-          <div id="render-result" style={{marginTop: 12}}>
-            <video src={render.url} controls style={{width: '100%', borderRadius: 8, background: '#000'}} />
-            <a href={render.url} download style={{fontSize: 13, color: '#2f6bff'}}>
-              下载 MP4
-            </a>
+          <div id="render-result" style={{display: 'flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 6, padding: '8px 12px', fontSize: 13}}>
+            <span style={{color: '#16a34a', fontWeight: 700}}>生成完成</span>
+            <a href={render.url} target="_blank" rel="noreferrer" style={{color: '#2f6bff'}}>播放</a>
+            <a href={render.url} download style={{color: '#2f6bff'}}>下载 MP4</a>
           </div>
         ) : null}
-        {render.status === 'error' ? <div style={{marginTop: 10, fontSize: 12, color: '#d33'}}>渲染失败：{render.error}</div> : null}
-
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20}}>
-          <h2 style={{fontSize: 15, margin: 0}}>导出配置</h2>
-          <button id="copy-btn" onClick={copyExport} style={{padding: '6px 12px', border: 'none', borderRadius: 8, background: '#2f6bff', color: '#fff', fontSize: 13, cursor: 'pointer'}}>
-            复制
-          </button>
-        </div>
-        <div style={{fontSize: 12, color: '#8a93a0', margin: '6px 0 10px'}}>把它作为批量数据的一项（JSON 数组元素）喂给 render-batch。</div>
-        <pre id="export-json" style={{flex: 1, margin: 0, overflow: 'auto', background: '#0f1620', color: '#cfe3ff', padding: 12, borderRadius: 8, fontSize: 11, lineHeight: 1.5}}>
-          {exportJson}
-        </pre>
+        {render.status === 'error' ? <div style={{background: '#fff', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#d33'}}>渲染失败：{render.error}</div> : null}
+        {!apiOk ? <div style={{background: '#fff', borderRadius: 6, padding: '8px 12px', fontSize: 13, color: '#8a93a0'}}>本地服务未连接，暂不能生成视频。</div> : null}
       </div>
+      </div>
+        <div style={{display: view === 'assets' ? 'flex' : 'none', flex: 1, minHeight: 0}}>
+        {assetLibraryView}
+      </div>
+        <div style={{display: view === 'tasks' ? 'flex' : 'none', flex: 1, minHeight: 0}}>
+        {taskCenterView}
       </div>
         <div style={{display: view === 'batch' ? 'block' : 'none', flex: 1, minHeight: 0, overflow: 'auto', background: '#f1f4fa', padding: '0 24px 22px'}}>
         {batchView}
+      </div>
+        <div style={{display: view === 'settings' ? 'flex' : 'none', flex: 1, minHeight: 0}}>
+        {settingsView}
       </div>
       </main>
     </div>

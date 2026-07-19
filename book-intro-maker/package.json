@@ -1,6 +1,6 @@
 {
   "name": "mercury-video-template",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "productName": "水星视频模板",
   "private": true,
   "main": "electron/main.cjs",

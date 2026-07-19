@@ -59,6 +59,35 @@ book-intro-maker/release/水星视频模板-Setup-0.2.0.exe
 - 目录版客户端：`book-intro-maker/release/win-unpacked/水星视频模板.exe`
 - 目录版启动验收：客户端启动后 `http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`
 
+## v0.2.1 客户端结构迭代
+
+本轮按“软件”而不是“网页表单”调整界面结构：
+
+- 新增独立“素材库”：封面、背景图、开场视频、背景音乐分类展示，可批量上传、预览、复制路径。
+- 主编辑页改为从素材库选择当前素材，上传只是补充入口。
+- 新增“任务中心”：展示最近生成视频与批量任务记录。
+- 新增“设置”：导出配置 JSON 移出主编辑页，收进高级配置。
+- 左侧“素材替换”和“任务列表”不再是重复跳转，分别进入素材库和任务中心。
+
+验证：
+
+- `node --check scripts/server.mjs` / `scripts/test-regressions.mjs` 通过。
+- `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run gui:build` 通过。
+- `npm.cmd test` 通过 18 项。
+- 浏览器实测：编辑页可见区不再显示导出配置；素材库 / 任务中心 / 设置页面均可独立打开。
+
+v0.2.1 安装包：
+
+```text
+book-intro-maker/release/水星视频模板-Setup-0.2.1.exe
+```
+
+- 大小：134,889,465 bytes
+- SHA256：`28CC38E9EEB7AFE986E6A945623DF0B639CD884CBCA763FDF7AC954DABD7D010`
+- 目录版客户端：`book-intro-maker/release/win-unpacked/水星视频模板.exe`
+- 目录版启动验收：客户端启动后 `http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`
+
 ## 下一步
 
 - 为安装包补 `.ico` 正式图标与代码签名证书。

@@ -126,6 +126,10 @@ try {
     ok(bgUpload.res.status === 200 && /^backgrounds\//.test(bgUpload.data.path || ''), '背景图可上传到 backgrounds/');
     ok(audioUpload.res.status === 200 && /^audio\//.test(audioUpload.data.path || ''), '音乐可上传到 audio/');
     ok(introUpload.res.status === 200 && /^intro-videos\//.test(introUpload.data.path || ''), '开场视频可上传到 intro-videos/');
+    const assetList = await (await fetch(`${B}/api/assets`)).json();
+    ok(assetList.assets?.backgrounds?.some((item) => item.path === bgUpload.data.path), '上传后的背景图出现在素材库清单');
+    ok(assetList.assets?.audio?.some((item) => item.path === audioUpload.data.path), '上传后的音乐出现在素材库清单');
+    ok(assetList.assets?.introVideos?.some((item) => item.path === introUpload.data.path), '上传后的开场视频出现在素材库清单');
     for (const item of [bgUpload.data, audioUpload.data, introUpload.data]) {
       if (item.path) await rm(path.join(process.cwd(), 'public', item.path), {force: true});
     }

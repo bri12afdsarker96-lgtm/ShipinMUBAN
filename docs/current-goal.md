@@ -54,6 +54,7 @@
 | 阶段 4B 封面查询按钮 | 已完成 | GUI 打包通过；接口降级路径实测通过；`npm test` 6/0 通过 |
 | 阶段 4C 批量队列控制 | 已完成 | 暂停/恢复/单条重试/失败原因展示完成；`npm test` 12/0 通过 |
 | 阶段 5A 桌面封装第一版 | 已完成 | 已生成 `水星视频模板-Setup-0.2.0.exe`；目录版客户端启动后本地服务返回 `{"ok":true}` |
+| 阶段 5B 客户端信息架构第一版 | 已完成 | v0.2.1：素材库、任务中心、设置页独立；编辑页从素材库选择素材；导出配置移至设置页 |
 
 ## 合并前目标
 
@@ -126,4 +127,11 @@ PR #2 合并后进入 **阶段三验收与阶段四产品化准备**。
 - 2026-07-19：打通 Electron / electron-builder 镜像下载，`npm.cmd run dist:win` 已生成
   `book-intro-maker/release/水星视频模板-Setup-0.2.0.exe`。大小 134,887,754 bytes，SHA256
   `8CC1FD4DF19053BB0FA2F369964D068F46FE7C5F0CFDACC8296AB60C1E8B6745`。目录版客户端启动验收通过，
+  `http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`。
+- 2026-07-19：完成 v0.2.1 客户端信息架构迭代。`/api/assets` 改为扫描真实素材目录；新增独立素材库、
+  任务中心、设置页；编辑页的背景音乐、背景图、主书封面、快闪书单逐本封面、开场视频等改为从素材库选择；
+  导出配置 JSON 从主编辑页移至设置页。验证：`node --check`、`npx.cmd tsc --noEmit`、`npm.cmd run gui:build`
+  和 `npm.cmd test` 18/0 均通过；浏览器实测页面入口和导出配置位置正确。`npm.cmd run dist:win` 已生成
+  `book-intro-maker/release/水星视频模板-Setup-0.2.1.exe`，大小 134,889,465 bytes，SHA256
+  `28CC38E9EEB7AFE986E6A945623DF0B639CD884CBCA763FDF7AC954DABD7D010`。目录版客户端启动验收通过，
   `http://127.0.0.1:43110/api/health` 返回 `{"ok":true}`。

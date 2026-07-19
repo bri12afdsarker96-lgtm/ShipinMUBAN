@@ -424,10 +424,68 @@ const handleBatchesList = async (res) => {
   return sendJson(res, 200, {batches});
 };
 
+const ASSET_LIBRARY_KINDS = {
+  covers: {
+    label: '书籍封面',
+    folders: [{dir: path.join(publicDir, 'covers'), prefix: 'covers'}],
+    extensions: new Set(['.jpg', '.jpeg', '.png', '.webp']),
+  },
+  backgrounds: {
+    label: '背景图',
+    folders: [{dir: path.join(publicDir, 'backgrounds'), prefix: 'backgrounds'}],
+    extensions: new Set(['.jpg', '.jpeg', '.png', '.webp']),
+  },
+  introVideos: {
+    label: '开场视频',
+    folders: [{dir: path.join(publicDir, 'intro-videos'), prefix: 'intro-videos'}],
+    extensions: new Set(['.mp4', '.webm', '.mov']),
+  },
+  audio: {
+    label: '背景音乐',
+    folders: [
+      {dir: path.join(publicDir, 'audio'), prefix: 'audio'},
+      {dir: publicDir, prefix: ''},
+    ],
+    extensions: new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg']),
+  },
+};
+
+const listAssetFiles = async (kind, spec) => {
+  const items = [];
+  for (const folder of spec.folders) {
+    if (!existsSync(folder.dir)) continue;
+    const entries = await readdir(folder.dir, {withFileTypes: true});
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!spec.extensions.has(ext)) continue;
+      const filePath = path.join(folder.dir, entry.name);
+      const info = await stat(filePath);
+      const assetPath = folder.prefix ? `${folder.prefix}/${entry.name}` : entry.name;
+      items.push({
+        kind,
+        name: entry.name,
+        path: assetPath,
+        url: `/${assetPath}`,
+        bytes: info.size,
+        mtime: info.mtimeMs,
+        mime: MIME[ext] || 'application/octet-stream',
+      });
+    }
+  }
+  items.sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+  return items;
+};
+
 const handleAssets = async (res) => {
-  const p = path.join(root, 'config', 'assets.example.json');
-  if (!existsSync(p)) return sendJson(res, 200, {});
-  return sendJson(res, 200, JSON.parse(await readFile(p, 'utf8')));
+  const library = {};
+  const counts = {};
+  for (const [kind, spec] of Object.entries(ASSET_LIBRARY_KINDS)) {
+    const items = await listAssetFiles(kind, spec);
+    library[kind] = items;
+    counts[kind] = items.length;
+  }
+  return sendJson(res, 200, {ok: true, assets: library, counts});
 };
 
 const UPLOAD_KINDS = {
