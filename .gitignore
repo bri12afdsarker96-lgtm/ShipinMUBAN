@@ -20,6 +20,7 @@ book-intro-maker/public/intro-videos/*
 book-intro-maker/public/audio/*
 !book-intro-maker/public/audio/.gitkeep
 book-intro-maker/config/*.resolved.json
+book-intro-maker/config/editor-settings.json
 
 book-intro-maker/gui/dist/
 book-intro-maker/release/
