@@ -40,6 +40,30 @@ const settingsFile = path.join(configDir, 'editor-settings.json');
 const DEFAULT_OUTPUT_SUBDIR = 'editor';
 const MAX_SUBDIR_DEPTH = 4;
 const SUBDIR_SEGMENT = /^[A-Za-z0-9一-龥_-]{1,40}$/;
+const WINDOWS_RESERVED_SEGMENTS = new Set([
+  'con',
+  'prn',
+  'aux',
+  'nul',
+  'com1',
+  'com2',
+  'com3',
+  'com4',
+  'com5',
+  'com6',
+  'com7',
+  'com8',
+  'com9',
+  'lpt1',
+  'lpt2',
+  'lpt3',
+  'lpt4',
+  'lpt5',
+  'lpt6',
+  'lpt7',
+  'lpt8',
+  'lpt9',
+]);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -157,6 +181,9 @@ const parseOutputSubdir = (input) => {
     throw Object.assign(new Error(`输出子目录最多 ${MAX_SUBDIR_DEPTH} 层`), {statusCode: 400});
   }
   for (const seg of segments) {
+    if (WINDOWS_RESERVED_SEGMENTS.has(seg.toLowerCase())) {
+      throw Object.assign(new Error('目录名不能使用 Windows 保留名称（如 CON、AUX、NUL、COM1、LPT1）'), {statusCode: 400});
+    }
     if (seg === '.' || seg === '..' || !SUBDIR_SEGMENT.test(seg)) {
       throw Object.assign(new Error('每层目录只能是字母/数字/中文/下划线/连字符（≤40 字符）'), {statusCode: 400});
     }

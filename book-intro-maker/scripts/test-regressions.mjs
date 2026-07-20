@@ -155,7 +155,7 @@ try {
     // —— 集成：设置页可写输出子目录 + 边界校验（无需渲染）——
     console.log('集成：设置输出子目录边界校验');
     const outRoot = path.join(process.cwd(), 'out');
-    for (const bad of ['../escape', '/etc/passwd', 'a\\b', 'C:\\win', '../../out2', 'foo/../bar', 'a/b/c/d/e', 'bad name']) {
+    for (const bad of ['../escape', '/etc/passwd', 'a\\b', 'C:\\win', '../../out2', 'foo/../bar', 'a/b/c/d/e', 'bad name', 'CON', 'safe/AUX', 'LPT1']) {
       const r = await postJson(`${B}/api/settings`, {outputSubdir: bad});
       ok(r.res.status === 400, `越界/非法子目录被拒绝：${JSON.stringify(bad)} -> ${r.res.status}`);
     }
